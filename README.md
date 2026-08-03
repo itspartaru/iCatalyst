@@ -234,6 +234,13 @@ drafts so the artifact list can be looked at before publishing.
 | `iCatalyst-tools-linux-x86_64.tar.gz` | prebuilt MozJPEG, pngwolf and oxipng, so Linux users need not compile |
 | `third-party-sources.tar.gz` | corresponding sources of the GPL components, as their licenses require |
 
+Artifacts are attached to a **draft** release, and only when there is a tag to
+attach them to: either the workflow was triggered by pushing a tag, or a tag was
+supplied to a manual run. A manual run without a tag still builds everything and
+leaves the artifacts on the run page — that is what it is for. The run summary
+states which of these happened, so a skipped publish step never has to be
+guessed at.
+
 ### Thanks
 
 - Thanks to the authors of the applications that are used in the project;
