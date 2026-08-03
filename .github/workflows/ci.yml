@@ -20,8 +20,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ['3.9', '3.12']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
       - name: Проверить, что всё компилируется
@@ -37,8 +37,8 @@ jobs:
     name: настоящие инструменты (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Установить оптимизаторы из пакетов
@@ -66,8 +66,8 @@ jobs:
     name: настоящие инструменты (windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Скачать oxipng
@@ -83,8 +83,8 @@ jobs:
     name: сборка .deb
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Установить средства проверки пакета
@@ -115,8 +115,8 @@ jobs:
     # Страховка: код 2010 года содержит циклы ожидания без выхода.
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Сравнить старую и новую реализации

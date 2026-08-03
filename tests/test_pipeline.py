@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import filecmp
+import os
 import shutil
 import tempfile
 import unittest
@@ -265,9 +266,13 @@ class MissingToolTest(ScenarioTest):
         args = ["/png:1", "/jpg:1", "/gif:0", "/outdir:%s" % self.out,
                 str(self.images)]
         code, out, err = support.run_cli(args, tools_dir=only, config=self.config)
-        self.assertIn("optipng", out + err)
-        # Подсказка про apt должна быть, и ровно одна на прогон.
-        self.assertEqual((out + err).count("sudo apt install optipng"), 1)
+        combined = out + err
+        self.assertIn("optipng", combined)
+        # Подсказка выводится ровно один раз на прогон, а не на каждый файл, и
+        # соответствует системе: про apt — только там, где apt есть.
+        hint = ("build_tools.py --download" if os.name == "nt"
+                else "sudo apt install optipng")
+        self.assertEqual(combined.count(hint), 1, combined)
 
 
 if __name__ == "__main__":

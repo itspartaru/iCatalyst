@@ -199,26 +199,25 @@ class InterruptTest(unittest.TestCase):
             cwd=str(Path(__file__).resolve().parent.parent), env=environment,
             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE)
+        # Ждём именно шапку таблицы, а не появление дочерних процессов: первыми
+        # дочерними оказываются зонды инструментов, которые запускаются раньше,
+        # чем начинается обработка. По ним прерывание приходило до старта
+        # прогона, и тест то проверял что-то, то нет.
+        header = _read_until(proc, "File Name", timeout=60)
+        self.assertIn("File Name", header,
+                      "прогон не дошёл до таблицы:\n%s" % header)
         try:
-            # Даём подняться и запустить инструменты.
-            deadline = time.monotonic() + 20
-            while time.monotonic() < deadline:
-                if _children_of(proc.pid):
-                    break
-                time.sleep(0.2)
             proc.send_signal(signal.SIGINT)
             stdout, stderr = proc.communicate(timeout=60)
         except subprocess.TimeoutExpired:
             proc.kill()
             self.fail("процесс не завершился после SIGINT")
+        stdout = header.encode("utf-8", "replace") + stdout
         combined = stdout.decode("utf-8", "replace") + stderr.decode("utf-8", "replace")
         self.assertNotIn("Traceback", combined)
         self.assertEqual(proc.returncode, 130, combined)
         self.assertIn("Interrupted by user", combined)
-        # Доказательство, что прогон действительно начался, а не упал на разборе
-        # аргументов: шапка таблицы напечатана.
-        self.assertIn("File Name", combined)
-        # И отчёт не должен врать, будто файлы обработаны.
+        # Отчёт не должен врать, будто файлы обработаны.
         self.assertNotIn("PNG [6/6]", combined)
         for path, data in originals.items():
             self.assertTrue(path.exists(), "оригинал %s исчез" % path.name)
@@ -226,14 +225,27 @@ class InterruptTest(unittest.TestCase):
                              "оригинал %s изменён после прерывания" % path.name)
 
 
-def _children_of(pid: int) -> list:
-    try:
-        import subprocess
-        out = subprocess.run(["pgrep", "-P", str(pid)], stdout=subprocess.PIPE,
-                             stderr=subprocess.DEVNULL, timeout=5)
-        return [line for line in out.stdout.decode().split() if line]
-    except Exception:
-        return []
+def _read_until(proc, needle: str, timeout: float) -> str:
+    """Читать stdout процесса, пока не встретится подстрока или не выйдет время.
+
+    Читаем побайтово: `readline` заблокировался бы, если процесс напечатал шапку
+    без завершающего перевода строки, а разбирать это в тесте не нужно.
+    """
+    collected = bytearray()
+    deadline = time.monotonic() + timeout
+    target = needle.encode("utf-8")
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            collected += proc.stdout.read() or b""
+            break
+        chunk = proc.stdout.read(1)
+        if not chunk:
+            time.sleep(0.01)
+            continue
+        collected += chunk
+        if target in collected:
+            break
+    return collected.decode("utf-8", "replace")
 
 
 class WorkerCountTest(unittest.TestCase):

@@ -20,8 +20,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Установить оптимизаторы (linux)
@@ -48,8 +48,8 @@ jobs:
     needs: [test]
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -77,14 +77,14 @@ jobs:
           cp README.md README.RU.md LICENSE.md LICENSE.RU.md THIRD-PARTY.md package/
           cd package && 7z a -tzip "../iCatalyst-${{ github.ref_name }}-windows-x86_64.zip" .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows
           path: iCatalyst-*-windows-x86_64.zip
 
   # Linux: два артефакта под разные ситуации.
   #   .deb — установка в систему, зависимости через apt, интеграция с меню.
-  #   портативный бинарник — для дистрибутивов не на dpkg и запуска без установки.
+  #   Портативный бинарник — для дистрибутивов не на dpkg и запуска без установки.
   # Собирается на 22.04 намеренно: бинарник должен работать и на более старых
   # системах, а не только на новейших (glibc совместим только вперёд).
   linux-packages:
@@ -92,8 +92,8 @@ jobs:
     needs: [test]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -155,7 +155,7 @@ jobs:
           cp README.md README.RU.md LICENSE.md LICENSE.RU.md THIRD-PARTY.md portable/
           tar -czf "iCatalyst-${{ github.ref_name }}-linux-x86_64.tar.gz" -C portable .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-packages
           path: |
@@ -169,8 +169,8 @@ jobs:
     needs: [test]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
 
@@ -211,7 +211,7 @@ jobs:
           done
           tar -czf third-party-sources.tar.gz sources || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-tools
           path: |
@@ -224,10 +224,10 @@ jobs:
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/**/*
           # Черновик намеренно: перед публикацией стоит взглянуть на состав и на

@@ -376,6 +376,10 @@ def run(argv: Sequence[str]) -> int:
         # только в текстовую группу ошибок в конце.
         for name in found.missing:
             reporter.missing_input_row(name)
+        # Сброс сразу после шапки. Без него при перенаправленном выводе шапка
+        # лежит в буфере до завершения первого файла, а `optipng -o7` на большом
+        # PNG считается минутами: пользователь всё это время видит пустой экран.
+        reporter.flush()
 
         for fmt, mode in modes.items():
             if mode:

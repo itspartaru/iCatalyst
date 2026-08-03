@@ -220,11 +220,20 @@ class CommandLineTest(unittest.TestCase):
 
     def test_check_reports_missing_essentials(self):
         with support.environment(ICATALYST_TOOLS_DIR=tempfile.mkdtemp(),
-                                 ICATALYST_TOOLS_ONLY="1"):
+                                 ICATALYST_TOOLS_ONLY="1",
+                                 ICATALYST_CONFIG=None):
             with support.captured() as (out, _):
                 code = bt.main(["--check"])
-        self.assertEqual(code, 1)
-        self.assertIn("sudo apt install", out.getvalue())
+        text = out.getvalue()
+        self.assertEqual(code, 1, text)
+        self.assertIn("НЕДОСТУПЕН", text)
+        # Подсказка должна соответствовать системе: совет про apt на Windows
+        # только сбивает с толку, там инструменты скачиваются нашим скриптом.
+        if os.name == "nt":
+            self.assertIn("build_tools.py --download", text)
+            self.assertNotIn("sudo apt install", text)
+        else:
+            self.assertIn("sudo apt install", text)
 
     def test_check_asks_about_modes_not_about_tool_names(self):
         """На Windows нет optipng, но роль его играет TruePNG.
