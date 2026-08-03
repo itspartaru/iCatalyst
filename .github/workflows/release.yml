@@ -30,8 +30,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             optipng zopfli advancecomp gifsicle libjpeg-turbo-progs
+      # `python`, а не `python3`: шаг общий для обеих систем, и на
+      # windows-раннере имя python3 не гарантировано.
       - name: Скачать oxipng
-        run: python3 Tools/build_tools.py --download
+        run: python Tools/build_tools.py --download
       - name: Прогнать все тесты
         run: python -m unittest discover -s tests -t . -v
 
@@ -111,12 +113,16 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Установить средства проверки пакета
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lintian desktop-file-utils
+
       - name: Собрать .deb
         run: python3 packaging/build_deb.py --lintian
 
       - name: Проверить, что пакет устанавливается и работает
         run: |
-          sudo apt-get update
           sudo apt-get install -y ./dist/icatalyst_*_all.deb
           icatalyst --version
           icatalyst --doctor

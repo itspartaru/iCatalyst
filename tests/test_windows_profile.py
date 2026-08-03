@@ -306,3 +306,88 @@ class PngwolfArgvTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ModeMonotonicityTest(unittest.TestCase):
+    """Структурная проверка инварианта «Xtreme не хуже Advanced».
+
+    Настоящий провал в CI выглядел так: `advdef -z2` (libdeflate) из Advanced
+    обыграл zopfli-кандидатов Xtreme на 16-битном сером изображении, и медленный
+    режим выдал 314 байт против 313. Обещание держалось случайно, потому что
+    наборы кандидатов не были вложены друг в друга.
+
+    Сравниваются именно команды, а не имена цепочек: на Windows имена совпадают
+    («truepng», «oxipng»), а флаги внутри разные, и проверка по именам ничего бы
+    не поймала. Ни одного установленного инструмента тест не требует, поэтому
+    ловит регресс сразу, а не когда сойдутся размеры на конкретной картинке.
+    """
+
+    class _Tool:
+        def __init__(self, name):
+            self.name = name
+            self.path = Path(name)
+            self.version = "0"
+
+        def has(self, _cap):
+            # Все возможности объявлены доступными: набор команд должен
+            # сравниваться в максимальной комплектации.
+            return True
+
+    class _Tools:
+        def find(self, name):
+            return ModeMonotonicityTest._Tool(name)
+
+        def available(self, *_names):
+            return True
+
+        def warn_once(self, *_args):
+            pass
+
+    class _Ctx:
+        def __init__(self, fmt, mode, cfg, tools):
+            self.fmt, self.mode, self.cfg, self.tools = fmt, mode, cfg, tools
+            self.work = Path("IN.png")
+            self.out = Path("OUT.png")
+            self.src = self.work
+            self.scratch = {}
+
+    def _commands(self, mode: int, windows: bool):
+        """Множество команд, которые режим способен выполнить."""
+        cfg = cfgmod.Config()
+        tools = self._Tools()
+        recipe = recipes.build("png", mode, cfg, windows=windows)
+        commands = set()
+        for chain in recipe.chains:
+            for step in chain.steps:
+                ctx = self._Ctx("png", mode, cfg, tools)
+                argv = step.argv(ctx)
+                if argv is not None:
+                    commands.add((step.tool, tuple(argv)))
+        return commands
+
+    def test_xtreme_can_run_everything_advanced_can(self):
+        for windows in (False, True):
+            with self.subTest(windows=windows):
+                advanced = self._commands(1, windows)
+                xtreme = self._commands(2, windows)
+                missing = advanced - xtreme
+                self.assertEqual(
+                    missing, set(),
+                    "Xtreme не умеет то, что умеет Advanced: %r" % sorted(missing))
+
+    def test_xtreme_also_does_more(self):
+        """Иначе «надмножество» вышло бы вырожденным: Xtreme = Advanced."""
+        for windows in (False, True):
+            with self.subTest(windows=windows):
+                extra = self._commands(2, windows) - self._commands(1, windows)
+                self.assertTrue(extra, "Xtreme ничем не отличается от Advanced")
+
+    def test_advanced_has_no_zopfli_class_steps(self):
+        """Advanced обязан остаться быстрым: zopfli — это уже Xtreme."""
+        for windows in (False, True):
+            with self.subTest(windows=windows):
+                rendered = " ".join(" ".join(argv)
+                                    for _tool, argv in self._commands(1, windows))
+                for slow in ("-4", "--iterations=", "-Z", "-zm5-9", "-o7", "max"):
+                    self.assertNotIn(slow, rendered,
+                                     "в Advanced просочился медленный шаг")

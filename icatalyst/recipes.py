@@ -144,7 +144,7 @@ def _oxipng_args(ctx, level: str, zopfli: bool, alpha: bool) -> Optional[list]:
     return args
 
 
-def _oxipng_chain(mode: int) -> Chain:
+def _oxipng_chain(mode: int, suffix: str = "") -> Chain:
     """Цепочка oxipng: обычный проход и, отдельным шагом, «грязная прозрачность».
 
     Второй шаг добавлен именно шагом, а не заменой флага, потому что `-a` вовсе
@@ -156,7 +156,7 @@ def _oxipng_chain(mode: int) -> Chain:
     level = "4" if mode == 1 else "max"
     zopfli = mode == 2
     return Chain(
-        "oxipng",
+        "oxipng" + suffix,
         (Step("oxipng", "oxipng",
               lambda ctx: _oxipng_args(ctx, level, zopfli, alpha=False),
               produces="out"),
@@ -167,28 +167,39 @@ def _oxipng_chain(mode: int) -> Chain:
     )
 
 
-def _png_posix(mode: int, cfg) -> Recipe:
-    level = OPTIPNG_ADVANCED if mode == 1 else OPTIPNG_XTREME
-    opts = cfg.png_mode(mode)
-    optipng = Step("optipng", "optipng", lambda ctx: _optipng_args(ctx, level),
-                   produces="out")
-    # `-z` — режим пересжатия, `-2` — уровень. Уровни advancecomp:
-    # 1=zlib, 2=libdeflate, 3=7z, 4=zopfli, то есть `-2` даёт ровно то же, что
-    # вложенный в Windows advdef 2.0. В 2.7 флаги были склеены в `-z2`: getopt
-    # разбирает это как две короткие опции, так что формы эквивалентны, но
-    # явная не оставляет места догадкам.
-    advdef_fast = Step("advdef", "advdef",
-                       lambda ctx: ["-z", "-2", "-q", str(ctx.work)], optional=True)
-    advdef_zopfli = Step("advdef-zopfli", "advdef",
-                         lambda ctx: ["-z", "-4", "-q", str(ctx.work)], optional=True)
+#: `-z` — режим пересжатия, `-2`/`-4` — уровень. Уровни advancecomp:
+#: 1=zlib, 2=libdeflate, 3=7z, 4=zopfli, то есть `-2` даёт ровно то же, что
+#: вложенный в Windows advdef 2.0. В 2.7 флаги были склеены в `-z2`: getopt
+#: разбирает это как две короткие опции, так что формы эквивалентны, но явная не
+#: оставляет места догадкам.
+def _advdef_step(name: str, level: str) -> Step:
+    return Step(name, "advdef",
+                lambda ctx: ["-z", level, "-q", str(ctx.work)], optional=True)
 
+
+def _optipng_step(level: str) -> Step:
+    return Step("optipng", "optipng", lambda ctx: _optipng_args(ctx, level),
+                produces="out")
+
+
+def _posix_advanced_chains(suffix: str = "") -> tuple:
+    """Быстрые цепочки: структурная оптимизация и один проход deflate."""
+    return (
+        Chain("optipng+advdef" + suffix,
+              (_optipng_step(OPTIPNG_ADVANCED), _advdef_step("advdef", "-2")),
+              ("optipng",)),
+        _oxipng_chain(1, suffix),
+    )
+
+
+def _png_posix(mode: int, cfg) -> Recipe:
+    opts = cfg.png_mode(mode)
     if mode == 1:
-        chains = (
-            Chain("optipng+advdef", (optipng, advdef_fast), ("optipng",)),
-            _oxipng_chain(mode),
-        )
-        note = "optipng %s + advdef -z2 (TruePNG и DeflOpt существуют только под Windows)" % level
+        chains = _posix_advanced_chains()
+        note = ("optipng %s + advdef -z2 (TruePNG и DeflOpt существуют только "
+                "под Windows)" % OPTIPNG_ADVANCED)
     else:
+        optipng = _optipng_step(OPTIPNG_XTREME)
         chains = (
             Chain("optipng+zopflipng",
                   (optipng,
@@ -199,10 +210,19 @@ def _png_posix(mode: int, cfg) -> Recipe:
                         lambda ctx: _zopflipng_args(ctx, lossy_transparent=True),
                         produces="out", optional=True)),
                   ("optipng", "zopflipng")),
-            Chain("optipng+advdef-zopfli", (optipng, advdef_zopfli), ("optipng", "advdef")),
+            Chain("optipng+advdef-zopfli",
+                  (optipng, _advdef_step("advdef-zopfli", "-4")),
+                  ("optipng", "advdef")),
             _oxipng_chain(mode),
+            # Цепочки Advanced участвуют и здесь. Иначе обещание «Xtreme не хуже
+            # Advanced» держится случайно: измерено, что на 16-битном сером
+            # изображении libdeflate из advdef -z2 обыгрывает zopfli, и Xtreme
+            # выдавал 314 байт против 313. Набор кандидатов медленного режима
+            # обязан быть надмножеством быстрого — тогда инвариант структурный.
+            *_posix_advanced_chains(suffix="-fast"),
         )
-        note = "optipng %s + zopflipng x%d" % (level, cfg.xtreme_iterations)
+        note = ("optipng %s + zopflipng x%d"
+                % (OPTIPNG_XTREME, cfg.xtreme_iterations))
     return Recipe("png", mode, "Advanced" if mode == 1 else "Xtreme", chains,
                   note=note, lossless_class=opts.lossless_class)
 
@@ -213,28 +233,42 @@ def _truepng_args(ctx, level_flags: Sequence[str]) -> list:
             *opts.legacy_flags, "-force", "-out", str(ctx.out), str(ctx.work)]
 
 
+def _windows_deflopt() -> Step:
+    return Step("deflopt", "deflopt",
+                lambda ctx: ["-k", str(ctx.work)], optional=True)
+
+
+def _windows_strip() -> Step:
+    """Удаление чанков как шаг цепочки.
+
+    В 2.7 это был отдельный проход по УЖЕ записанному файлу назначения
+    (`iCatalyst.bat:748`): если проход падал, оригинал был уже перезаписан.
+    """
+    return Step("truepng-strip", "truepng",
+                lambda ctx: (["-nz", "-md", "remove", "all", str(ctx.work)]
+                             if ctx.cfg.pngtags == cfgmod.STRIP_ALL else None),
+                optional=True)
+
+
+def _windows_advanced_steps() -> tuple:
+    deflopt = _windows_deflopt()
+    return (
+        Step("truepng", "truepng",
+             lambda ctx: _truepng_args(ctx, ("-zc7", "-zm8", "-zs0,1,3")),
+             produces="out"),
+        deflopt,
+        Step("advdef", "advdef", lambda ctx: ["-z2", str(ctx.work)], optional=True),
+        deflopt,
+        _windows_strip(),
+    )
+
+
 def _png_windows(mode: int, cfg) -> Recipe:
     """Windows-цепочка сохраняется дословно: результат остаётся байт в байт."""
     opts = cfg.png_mode(mode)
-    deflopt = Step("deflopt", "deflopt",
-                   lambda ctx: ["-k", str(ctx.work)], optional=True)
-    # В 2.7 метаданные снимались отдельным проходом по УЖЕ записанному файлу
-    # назначения (`iCatalyst.bat:748`): если проход падал, оригинал был уже
-    # перезаписан. Здесь это шаг цепочки, работающий во временном файле.
-    strip = Step("truepng-strip", "truepng",
-                 lambda ctx: (["-nz", "-md", "remove", "all", str(ctx.work)]
-                              if ctx.cfg.pngtags == cfgmod.STRIP_ALL else None),
-                 optional=True)
+    deflopt = _windows_deflopt()
     if mode == 1:
-        steps = (
-            Step("truepng", "truepng",
-                 lambda ctx: _truepng_args(ctx, ("-zc7", "-zm8", "-zs0,1,3")),
-                 produces="out"),
-            deflopt,
-            Step("advdef", "advdef", lambda ctx: ["-z2", str(ctx.work)], optional=True),
-            deflopt,
-            strip,
-        )
+        steps = _windows_advanced_steps()
     else:
         steps = (
             Step("truepng", "truepng",
@@ -242,9 +276,14 @@ def _png_windows(mode: int, cfg) -> Recipe:
                  produces="out", parse=_parse_truepng_log),
             Step("pngwolf", "pngwolf", _pngwolf_args, produces="out", optional=True),
             deflopt,
-            strip,
+            _windows_strip(),
         )
     chains = (Chain("truepng", steps, ("truepng",)), _oxipng_chain(mode))
+    if mode == 2:
+        # Как и на POSIX, медленный режим обязан гонять и быстрые цепочки:
+        # иначе «Xtreme не хуже Advanced» — совпадение, а не свойство.
+        chains += (Chain("truepng-fast", _windows_advanced_steps(), ("truepng",)),
+                   _oxipng_chain(1, suffix="-fast"))
     return Recipe("png", mode, "Advanced" if mode == 1 else "Xtreme", chains,
                   lossless_class=opts.lossless_class)
 

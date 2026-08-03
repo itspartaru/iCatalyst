@@ -273,6 +273,8 @@ class DebPackageTest(unittest.TestCase):
         # ломается, и заставлять их ставить неправильно.
         self.assertIn("zopfli", " ".join(build_deb.RECOMMENDS))
 
+    @unittest.skipIf(os.name == "nt",
+                     "права POSIX на Windows не значат ничего: каталоги там 0777")
     def test_config_is_declared_a_conffile(self):
         """Иначе dpkg затирал бы правки пользователя при обновлении."""
         import tempfile as tf

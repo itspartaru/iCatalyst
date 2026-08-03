@@ -285,8 +285,9 @@ class MapperThreadSafetyTest(unittest.TestCase):
             destinations = list(pool.map(
                 lambda src: mapper.destination(src, root), sources))
 
-        roots = {str(P(d).relative_to(tmp / "out")).split("/")[0]
-                 for d in destinations}
+        # `.parts[0]`, а не разбор строки по «/»: на Windows разделитель другой,
+        # и такой тест был бы красным только там.
+        roots = {P(d).relative_to(tmp / "out").parts[0] for d in destinations}
         self.assertEqual(roots, {"Фото — копия"},
                          "дерево разъехалось по нескольким выходным каталогам")
         self.assertEqual(len(set(destinations)), len(destinations),

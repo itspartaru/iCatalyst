@@ -21,8 +21,23 @@ from tests import corpus, support
 
 #: Абсолютный путь к интерпретатору: PATH в этих тестах заменяется целиком,
 #: поэтому `/usr/bin/env` был бы недоступен.
+#:
+#: `emit` пишет байты в UTF-8 напрямую, а не через `print`. Так делает настоящий
+#: zenity: это программа на C, она выводит байты и не смотрит на локаль. Подделка
+#: на `print` зависела бы от PYTHONIOENCODING и падала бы там, где настоящий
+#: инструмент работает.
 _FAKE = """#!{python}
 import sys
+
+
+def emit(text):
+    # bytes([10]) вместо escape-последовательности: этот код проходит через
+    # str.format и запись в файл, и лишний уровень экранирования уже один раз
+    # превратил escape в настоящий перевод строки, сломав подделку.
+    sys.stdout.buffer.write(text.encode("utf-8") + bytes([10]))
+    sys.stdout.buffer.flush()
+
+
 {body}
 """
 
@@ -34,6 +49,8 @@ def _write_tool(directory: Path, name: str, body: str) -> Path:
     return path
 
 
+@unittest.skipIf(os.name == "nt",
+                 "zenity и kdialog — механизмы POSIX; на Windows работает tk")
 class BackendTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -55,7 +72,7 @@ class BackendTest(unittest.TestCase):
         return support.environment(**values)
 
     def test_zenity_returns_the_chosen_directory(self):
-        _write_tool(self.bin, "zenity", 'print("/tmp/выбранный каталог")')
+        _write_tool(self.bin, "zenity", 'emit("/tmp/выбранный каталог")')
         with self._with_path():
             result = picker.pick_directory("zenity")
         self.assertIs(result.choice, picker.Choice.DIR)
@@ -78,7 +95,7 @@ class BackendTest(unittest.TestCase):
         self.assertIn("5", result.note)
 
     def test_kdialog_returns_the_chosen_directory(self):
-        _write_tool(self.bin, "kdialog", 'print("/tmp/kde")')
+        _write_tool(self.bin, "kdialog", 'emit("/tmp/kde")')
         with self._with_path():
             result = picker.pick_directory("kdialog")
         self.assertIs(result.choice, picker.Choice.DIR)
@@ -108,7 +125,7 @@ class BackendTest(unittest.TestCase):
         self.assertIn("picker=none", result.note)
 
     def test_environment_variable_overrides_the_argument(self):
-        _write_tool(self.bin, "zenity", 'print("/tmp/из переменной")')
+        _write_tool(self.bin, "zenity", 'emit("/tmp/из переменной")')
         with self._with_path(ICATALYST_PICKER="zenity"):
             result = picker.pick_directory("kdialog")
         self.assertEqual(result.path, Path("/tmp/из переменной"))
@@ -116,7 +133,7 @@ class BackendTest(unittest.TestCase):
     def test_broken_backend_falls_through_to_the_next_one(self):
         """Сломанный zenity не должен решать за пользователя."""
         _write_tool(self.bin, "zenity", "sys.exit(5)")
-        _write_tool(self.bin, "kdialog", 'print("/tmp/подхватил kdialog")')
+        _write_tool(self.bin, "kdialog", 'emit("/tmp/подхватил kdialog")')
         with self._with_path():
             chain = picker.backend_chain()
             self.assertIn("zenity", chain)
@@ -154,6 +171,8 @@ class ChainTest(unittest.TestCase):
             self.assertEqual(picker.backend_chain()[-1], "terminal")
 
 
+@unittest.skipIf(os.name == "nt",
+                 "подделки диалогов — POSIX-скрипты, на Windows не исполняются")
 class CliIntegrationTest(unittest.TestCase):
     """Как результат выбора доезжает до записи файлов."""
 
@@ -182,7 +201,7 @@ class CliIntegrationTest(unittest.TestCase):
 
     def test_chosen_directory_is_used(self):
         target = self.base / "куда сохранить"
-        _write_tool(self.bin, "zenity", 'print(%r)' % str(target))
+        _write_tool(self.bin, "zenity", 'emit(%r)' % str(target))
         code, out, err = self._run("--picker", "zenity", ICATALYST_PICKER=None)
         self.assertEqual(code, 0, err)
         row = support.tsv_rows(out)[0]

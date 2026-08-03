@@ -46,13 +46,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             optipng zopfli advancecomp gifsicle libjpeg-turbo-progs
+      # Без этого шага oxipng отсутствует, тест его флагов молча пропускается, а
+      # проверка «ни один тест не пропущен» ниже как раз для этого и стоит.
+      - name: Скачать oxipng
+        run: python3 Tools/build_tools.py --download
       - name: Показать найденные инструменты и команды
         run: python -m icatalyst --doctor
       - name: Прогнать тесты с настоящими инструментами
-        run: python -m unittest tests.test_real_tools -v
-      - name: Убедиться, что ни один тест не был пропущен молча
         run: |
-          python -m unittest tests.test_real_tools 2>&1 | tee result.log
+          python -m unittest tests.test_real_tools -v 2>&1 | tee result.log
           if grep -q "skipped" result.log; then
             echo "::error::часть проверок пропущена — инструмент не найден"
             exit 1
@@ -68,6 +70,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Скачать oxipng
+        run: python Tools/build_tools.py --download
       - name: Показать найденные инструменты и команды
         run: python -m icatalyst --doctor
       - name: Прогнать тесты с настоящими инструментами
@@ -83,10 +87,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Установить lintian
+      - name: Установить средства проверки пакета
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends lintian
+          sudo apt-get install -y --no-install-recommends lintian desktop-file-utils
       - name: Собрать и проверить пакет
         run: python3 packaging/build_deb.py --lintian
       - name: Установить и запустить
@@ -107,12 +111,12 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # Один прогон, а не два: цепочка 2.7 небыстрая, и повторять её ради
+      # отдельной проверки на пропуски незачем.
       - name: Сравнить старую и новую реализации
-        run: python -m unittest tests.test_parity -v
-      - name: Убедиться, что сравнение действительно выполнялось
         shell: bash
         run: |
-          python -m unittest tests.test_parity 2>&1 | tee parity.log
+          python -m unittest tests.test_parity -v 2>&1 | tee parity.log
           if grep -q "skipped" parity.log; then
             echo "::error::харнесс паритета пропущен — цепочка 2.7 недоступна"
             exit 1

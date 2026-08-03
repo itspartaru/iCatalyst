@@ -73,7 +73,13 @@ class CorpusTest(unittest.TestCase):
 
     def test_long_paths_are_handled(self):
         deep = [row for row in self.rows if len(row["source"]) > 260]
-        self.assertTrue(deep, "в корпусе нет путей длиннее 260 символов")
+        if not deep:
+            # На Windows создание такого пути зависит от системной настройки
+            # LongPathsEnabled, и генератор корпуса молча пропускает то, чего
+            # файловая система не дала создать. На POSIX оправданий нет.
+            if os.name == "nt":
+                self.skipTest("файловая система не дала создать путь длиннее 260")
+            self.fail("в корпусе нет путей длиннее 260 символов")
         for row in deep:
             self.assertIn(row["status"], ("ok", "kept"), row)
 
