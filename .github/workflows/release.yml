@@ -186,14 +186,21 @@ jobs:
         continue-on-error: true
         run: python3 Tools/build_tools.py --download --build
 
-      - name: Показать, что получилось
-        run: python3 Tools/build_tools.py --check
+      # `--report-built`, а не `--check`: эта работа apt-оптимизаторы не
+      # устанавливает, они ей для сборки артефакта не нужны, и падать из-за их
+      # отсутствия она не должна. Отчёт перечисляет ровно то, что попало в архив,
+      # и явно называет несобранное — молча урезанный артефакт недопустим.
+      - name: Показать, что попало в артефакт
+        run: python3 Tools/build_tools.py --report-built | tee built.txt
 
       - name: Собрать архив инструментов
         run: |
           mkdir -p package/bin package/licenses
           cp -r Tools/bin/* package/bin/ 2>/dev/null || true
           cp Tools/tools.lock.json package/
+          # Состав архива кладётся внутрь архива: получатель должен видеть, что
+          # в нём есть, не запуская ничего.
+          cp built.txt package/BUILT.txt
           for f in Tools/build/src/*/LICENSE* Tools/build/src/*/COPYING*; do
             [ -f "$f" ] && cp "$f" "package/licenses/$(basename "$(dirname "$f")")-$(basename "$f")" || true
           done

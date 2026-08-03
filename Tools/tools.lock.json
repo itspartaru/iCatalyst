@@ -51,7 +51,14 @@
         "именно «выключить нестандартные дефолты MozJPEG»."
       ],
       "apt": ["build-essential", "cmake", "nasm", "git"],
-      "target": "jpegtran",
+      "target": "jpegtran-static",
+      "target_comment": [
+        "Именно jpegtran-static. При ENABLE_SHARED=0 в CMakeLists mozjpeg есть",
+        "только add_executable(jpegtran-static ...), а цели с именем jpegtran не",
+        "существует — `cmake --build --target jpegtran` падает. Сам upstream",
+        "ставит этот файл переименованным: install(PROGRAMS jpegtran-static",
+        "RENAME jpegtran), поэтому install_as остаётся jpegtran."
+      ],
       "install_as": "jpegtran",
       "cmake_args": [
         "-DCMAKE_BUILD_TYPE=Release",

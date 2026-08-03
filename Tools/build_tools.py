@@ -306,7 +306,7 @@ def build(lock: Dict, only: Optional[List[str]]) -> List[str]:
                 build_cmd += ["--target", entry["target"]]
             _run(build_cmd)
 
-            produced = _find_built(obj, entry["target"])
+            produced = _find_built(obj, entry["target"], entry["install_as"])
             installed = _install(produced, entry["install_as"])
             _write_stamp(name, pin, installed, {
                 "tag": entry["tag"],
@@ -320,16 +320,25 @@ def build(lock: Dict, only: Optional[List[str]]) -> List[str]:
     return problems
 
 
-def _find_built(obj: Path, target: str) -> Path:
-    for candidate in (obj / target, obj / (target + ".exe")):
-        if candidate.is_file():
-            return candidate
-    matches = [p for p in obj.rglob(target) if p.is_file()] + \
-              [p for p in obj.rglob(target + ".exe") if p.is_file()]
-    if matches:
-        return matches[0]
-    raise BuildError("сборка прошла, но исполняемый файл %s не найден в %s"
-                     % (target, obj))
+def _find_built(obj: Path, target: str, install_as: str = "") -> Path:
+    """Найти собранный файл по имени цели или по имени установки.
+
+    Имена расходятся: у mozjpeg цель называется `jpegtran-static`, а upstream
+    ставит её переименованной в `jpegtran`. Ищем по обоим, чтобы переименование
+    вверху по течению не ломало сборку молча.
+    """
+    names = [n for n in (target, install_as) if n]
+    for name in names:
+        for candidate in (obj / name, obj / (name + ".exe")):
+            if candidate.is_file():
+                return candidate
+    for name in names:
+        matches = [p for p in obj.rglob(name) if p.is_file()] + \
+                  [p for p in obj.rglob(name + ".exe") if p.is_file()]
+        if matches:
+            return matches[0]
+    raise BuildError("сборка прошла, но исполняемый файл (%s) не найден в %s"
+                     % (" или ".join(names), obj))
 
 
 def _submodule_state(source: Path) -> Dict[str, str]:
@@ -417,6 +426,50 @@ def check() -> int:
     return 0
 
 
+def report_built(lock: Dict) -> int:
+    """Перечислить, что реально лежит в Tools/bin, и чего не хватает.
+
+    Отделено от `--check` намеренно. `--check` отвечает на вопрос «можно ли этим
+    пользоваться» и потому падает, если формат недоступен — это правильно для
+    пользователя. А работа CI, собирающая артефакт с инструментами, apt-пакеты
+    не устанавливает и падать из-за их отсутствия не должна: её задача — честно
+    сказать, что попало в архив.
+    """
+    expected = sorted(set(lock.get("downloads", {})) | set(lock.get("builds", {})))
+    present, missing = [], []
+    for name in expected:
+        entry = (lock.get("downloads", {}).get(name)
+                 or lock.get("builds", {}).get(name))
+        install_as = entry.get("install_as")
+        if install_as is None:
+            artifact = entry.get("artifacts", {}).get(platform_dir())
+            install_as = artifact["install_as"] if artifact else name
+        path = BIN_DIR / install_as
+        if path.is_file():
+            present.append((name, path, _sha256_file(path)))
+        else:
+            missing.append(name)
+
+    log("Артефакты в %s" % BIN_DIR)
+    for name, path, digest in present:
+        log("  %-10s %10d Б  sha256:%s" % (name, path.stat().st_size, digest))
+    if missing:
+        # Ни при каких условиях не молча: отсутствующий инструмент означает, что
+        # соответствующий режим у пользователя деградирует.
+        log("")
+        log("НЕ СОБРАНО: %s" % ", ".join(missing))
+        for name in missing:
+            entry = lock.get("builds", {}).get(name)
+            if entry:
+                log("  %s: сборка из %s@%s не удалась — смотрите лог шага сборки"
+                    % (name, entry["repo"], entry["tag"]))
+    if not present:
+        log("")
+        log("В артефакт не попало ни одного инструмента.")
+        return 1
+    return 0
+
+
 def print_apt(lock: Dict) -> int:
     packages = set()
     for name, spec in TOOL_SPECS.items():
@@ -451,7 +504,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--build", action="store_true",
                         help="собрать из исходников то, чего нет в пакетах")
     parser.add_argument("--check", action="store_true",
-                        help="только показать, что найдено")
+                        help="показать, что найдено; код 1, если формат недоступен")
+    parser.add_argument("--report-built", action="store_true",
+                        help="перечислить собранные артефакты; не требует apt-пакетов")
     parser.add_argument("--print-apt", action="store_true",
                         help="напечатать строку установки пакетов и выйти")
     parser.add_argument("--clean", action="store_true",
@@ -470,6 +525,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return print_apt(lock)
     if args.clean:
         return clean()
+    if args.report_built:
+        return report_built(lock)
     if args.check:
         return check()
 
