@@ -1,3 +1,49 @@
-*.bat text eol=crlf
-*.ini text eol=crlf
-*.js text eol=crlf
+# По умолчанию не угадывать ничего: файлы, не попавшие под правила ниже,
+# хранятся и извлекаются байт в байт. Это защищает legacy-исходники,
+# записанные в cp866/windows-1251, от повреждения при нормализации.
+* -text
+
+# Legacy Windows-исходники: устаревшие кодировки, CRLF обязателен.
+# working-tree-encoding здесь НЕ нужен — в репозитории намеренно лежат сырые
+# байты cp866/1251, и перекодировка сломала бы белые списки символов в *.js.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ini  text eol=crlf
+*.js   text eol=crlf
+
+# Новые кроссплатформенные исходники: всегда LF, на любой платформе.
+# Без этого .sh извлекался бы с CRLF и умирал с "bad interpreter: /bin/bash^M".
+*.py       text eol=lf
+*.sh       text eol=lf
+*.md       text eol=lf
+*.json     text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.toml     text eol=lf
+*.cfg      text eol=lf
+*.patch    text eol=lf
+*.desktop  text eol=lf
+Makefile   text eol=lf
+
+# Вложенные сторонние бинарники: не трогать, не диффить, не считать нашим кодом.
+*.exe          binary linguist-vendored
+*.dll          binary linguist-vendored
+Tools/apps/**  binary linguist-vendored
+Tools/bin/**   binary linguist-vendored
+
+# Тестовые фикстуры и изображения.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.jpe  binary
+*.gif  binary
+*.ico  binary
+
+# Статистика языков: не давать 40-килобайтному .bat определять репозиторий.
+*.bat linguist-language=Batchfile
+
+# Не тащить служебное в git archive / исходные тарболлы.
+/.github        export-ignore
+/tests          export-ignore
+/.gitattributes export-ignore
+/.gitignore     export-ignore

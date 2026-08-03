@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Image Catalyst
+GenericName=Lossless image optimizer
+Comment=Lossless PNG, JPEG and GIF optimization
+Comment[ru]=Сжатие PNG, JPEG и GIF без потерь
+
+# %F передаёт список брошенных файлов и папок — это и есть ответ Linux на
+# «кинуть папку на иконку»: без .desktop-файла бросать просто некуда.
+# Terminal=true обязателен: программа консольная, показывает меню и таблицу.
+# --pause не даёт окну закрыться раньше, чем пользователь прочтёт отчёт. Это
+# явный флаг, а не обёртка `env` с переменной окружения: lintian справедливо
+# возражает против env в Exec, поскольку такой «команды» в пакете нет.
+Exec=icatalyst --pause %F
+Terminal=true
+
+# Значок из стандартной темы: своего у проекта нет, а выдумывать его я не берусь.
+# Замените на Icon=icatalyst, если положите свой файл в hicolor.
+Icon=image-x-generic
+# Ровно одна главная категория (Graphics): с двумя приложение появлялось бы
+# в меню дважды.
+Categories=Graphics;2DGraphics;RasterGraphics;
+Keywords=png;jpeg;jpg;gif;optimize;compress;lossless;
+MimeType=image/png;image/jpeg;image/gif;inode/directory;
+StartupNotify=false

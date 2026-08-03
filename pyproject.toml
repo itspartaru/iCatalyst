@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "icatalyst"
+description = "Lossless PNG, JPEG and GIF image optimization for Windows and Linux"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { file = "LICENSE.md" }
+authors = [
+    { name = "Lorents" },
+    { name = "Res2001" },
+]
+keywords = ["png", "jpeg", "gif", "lossless", "optimization", "compression"]
+classifiers = [
+    "Environment :: Console",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Graphics :: Graphics Conversion",
+]
+dynamic = ["version"]
+
+# Рантайм — только стандартная библиотека. Это не стилистика: программа должна
+# запускаться из распакованной папки без установки чего бы то ни было.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/lorents17/iCatalyst"
+
+[project.scripts]
+icatalyst = "icatalyst.__main__:main"
+
+[tool.setuptools]
+packages = ["icatalyst"]
+
+[tool.setuptools.dynamic]
+version = { attr = "icatalyst.__version__" }

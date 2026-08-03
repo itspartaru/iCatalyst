@@ -1,0 +1,246 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Шлюз. Ни один артефакт не собирается, пока тесты не прошли: собрать пакет из
+  # заведомо сломанного кода и приложить его к релизу — худшее, что здесь может
+  # произойти.
+  test:
+    name: тесты (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Установить оптимизаторы (linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            optipng zopfli advancecomp gifsicle libjpeg-turbo-progs
+      - name: Скачать oxipng
+        run: python3 Tools/build_tools.py --download
+      - name: Прогнать все тесты
+        run: python -m unittest discover -s tests -t . -v
+
+  # Отдельным шлюзом: сравнение с 2.7 на настоящих Tools/apps/*.exe. Пока оно не
+  # зелёное, удалять legacy-реализацию нельзя, и релиз выпускать тоже незачем.
+  parity:
+    name: паритет с версией 2.7
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Сравнить старую и новую реализации
+        shell: bash
+        run: |
+          python -m unittest tests.test_parity -v 2>&1 | tee parity.log
+          if grep -q "skipped" parity.log; then
+            echo "::error::харнесс паритета пропущен — цепочка 2.7 недоступна"
+            exit 1
+          fi
+
+  # Windows: один iCatalyst.exe, на который можно бросить папку.
+  # Tools/apps/*.exe кладутся рядом, а не внутрь — так exe остаётся небольшим,
+  # антивирусы спокойнее, и обновление инструмента не требует пересборки.
+  windows-exe:
+    name: iCatalyst.exe
+    needs: [test, parity]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Скачать oxipng для Windows
+        run: python Tools/build_tools.py --download
+
+      - name: Собрать
+        run: |
+          python -m pip install --disable-pip-version-check "pyinstaller==6.*"
+          python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/icatalyst.spec
+
+      - name: Проверить собранный exe
+        run: |
+          dist\iCatalyst.exe --version
+          dist\iCatalyst.exe --doctor
+
+      - name: Собрать архив
+        shell: bash
+        run: |
+          mkdir -p package/Tools
+          cp dist/iCatalyst.exe iCatalyst-3.bat package/
+          cp -r Tools/apps package/Tools/apps
+          cp -r Tools/bin package/Tools/bin 2>/dev/null || true
+          cp Tools/config.ini package/Tools/
+          cp README.md README.RU.md LICENSE.md LICENSE.RU.md THIRD-PARTY.md package/
+          cd package && 7z a -tzip "../iCatalyst-${{ github.ref_name }}-windows-x86_64.zip" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: iCatalyst-*-windows-x86_64.zip
+
+  # Linux: два артефакта под разные ситуации.
+  #   .deb — установка в систему, зависимости через apt, интеграция с меню.
+  #   портативный бинарник — для дистрибутивов не на dpkg и запуска без установки.
+  # Собирается на 22.04 намеренно: бинарник должен работать и на более старых
+  # системах, а не только на новейших (glibc совместим только вперёд).
+  linux-packages:
+    name: .deb и портативный бинарник
+    needs: [test, parity]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Собрать .deb
+        run: python3 packaging/build_deb.py --lintian
+
+      - name: Проверить, что пакет устанавливается и работает
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ./dist/icatalyst_*_all.deb
+          icatalyst --version
+          icatalyst --doctor
+          man --warnings -l /usr/share/man/man1/icatalyst.1.gz > /dev/null
+          desktop-file-validate /usr/share/applications/icatalyst.desktop
+          # Зависимости пакета обязаны быть достаточны: если optipng не
+          # подтянулся, значит Depends объявлен неверно.
+          command -v optipng gifsicle jpegtran
+
+      - name: Сквозная проверка установленного пакета
+        run: |
+          python3 - <<'PY'
+          import pathlib, subprocess, sys, tempfile
+          sys.path.insert(0, '.')
+          from tests import corpus
+          tmp = pathlib.Path(tempfile.mkdtemp())
+          src = tmp / 'Фото — копия'
+          src.mkdir()
+          (src / 'Ёлка «ель».png').write_bytes(
+              corpus.png_bytes(width=64, height=64, text=b'q' * 400))
+          (src / 'фото (1).jpg').write_bytes(corpus.jpeg_bytes(comment=b'e' * 600))
+          out = tmp / 'out'
+          proc = subprocess.run(['icatalyst', '/png:1', '/jpg:1', '/gif:0',
+                                 '/outdir:%s' % out, '--tsv', '--no-pause', str(src)],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+          print(proc.stdout.decode(), proc.stderr.decode())
+          assert proc.returncode == 0, proc.returncode
+          rows = [l.split('\t') for l in proc.stdout.decode().splitlines()[1:] if l]
+          assert len(rows) == 2, rows
+          assert all(r[0] == 'ok' for r in rows), rows
+          PY
+
+      - name: Собрать портативный бинарник
+        run: |
+          python3 -m pip install --disable-pip-version-check "pyinstaller==6.*"
+          python3 -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/icatalyst.spec
+          ./dist/icatalyst --version
+          ./dist/icatalyst --doctor
+
+      - name: Собрать архив с портативным бинарником
+        run: |
+          mkdir -p portable/Tools
+          cp dist/icatalyst icatalyst.desktop portable/
+          cp Tools/config.ini portable/Tools/
+          cp -r Tools/bin portable/Tools/bin 2>/dev/null || true
+          cp README.md README.RU.md LICENSE.md LICENSE.RU.md THIRD-PARTY.md portable/
+          tar -czf "iCatalyst-${{ github.ref_name }}-linux-x86_64.tar.gz" -C portable .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            dist/icatalyst_*_all.deb
+            iCatalyst-*-linux-x86_64.tar.gz
+
+  # Готовые сборки инструментов, чтобы пользователю не приходилось компилировать
+  # mozjpeg и pngwolf самому.
+  linux-tools:
+    name: инструменты для Linux
+    needs: [test]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Установить средства сборки
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake nasm git
+
+      - name: Скачать готовое и собрать остальное
+        # continue-on-error: pngwolf-zopfli вендорит GAlib 1996 года, и под
+        # современным GCC сборка может потребовать патчей. Провал не должен
+        # ронять релиз: режим Xtreme откатывается на zopfli через oxipng.
+        continue-on-error: true
+        run: python3 Tools/build_tools.py --download --build
+
+      - name: Показать, что получилось
+        run: python3 Tools/build_tools.py --check
+
+      - name: Собрать архив инструментов
+        run: |
+          mkdir -p package/bin package/licenses
+          cp -r Tools/bin/* package/bin/ 2>/dev/null || true
+          cp Tools/tools.lock.json package/
+          for f in Tools/build/src/*/LICENSE* Tools/build/src/*/COPYING*; do
+            [ -f "$f" ] && cp "$f" "package/licenses/$(basename "$(dirname "$f")")-$(basename "$f")" || true
+          done
+          tar -czf "iCatalyst-tools-linux-x86_64.tar.gz" -C package .
+
+      # GPL требует не упомянуть исходники, а сделать их доступными. Мы собираем
+      # их сами из пиньованных коммитов, поэтому приложить их к тому же релизу —
+      # самый чистый способ выполнить требование.
+      - name: Собрать исходники сторонних компонентов
+        run: |
+          mkdir -p sources
+          for d in Tools/build/src/*/; do
+            name=$(basename "$d")
+            tar -czf "sources/$name-source.tar.gz" -C "$(dirname "$d")" "$name" || true
+          done
+          tar -czf third-party-sources.tar.gz sources || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-tools
+          path: |
+            iCatalyst-tools-linux-x86_64.tar.gz
+            third-party-sources.tar.gz
+
+  publish:
+    name: опубликовать релиз
+    needs: [windows-exe, linux-packages, linux-tools]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          # Черновик намеренно: перед публикацией стоит взглянуть на состав и на
+          # заметки к выпуску.
+          draft: true
+          generate_release_notes: true

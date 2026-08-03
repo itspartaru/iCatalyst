@@ -1,0 +1,105 @@
+{
+  "comment": [
+    "Пины внешних инструментов. Файл отслеживается в git и служит контрактом",
+    "воспроизводимости: ключ кэша в CI считается по его содержимому, поэтому",
+    "смена пина вызывает ровно одну пересборку.",
+    "Хеши проверяются ВСЕГДА: мы скачиваем исполняемый код по сети."
+  ],
+  "downloads": {
+    "oxipng": {
+      "version": "10.1.1",
+      "homepage": "https://github.com/oxipng/oxipng",
+      "license": "MIT",
+      "comment": "Официальные статические сборки. musl для Linux, чтобы не зависеть от версии glibc.",
+      "artifacts": {
+        "linux-x86_64": {
+          "url": "https://github.com/oxipng/oxipng/releases/download/v10.1.1/oxipng-10.1.1-x86_64-unknown-linux-musl.tar.gz",
+          "sha256": "a7e13e06040dea5fe1298668ac99afbe0ed781610a9e4b27d62a8850b3fdf273",
+          "member": "oxipng-10.1.1-x86_64-unknown-linux-musl/oxipng",
+          "install_as": "oxipng"
+        },
+        "linux-aarch64": {
+          "url": "https://github.com/oxipng/oxipng/releases/download/v10.1.1/oxipng-10.1.1-aarch64-unknown-linux-musl.tar.gz",
+          "sha256": "d8b599202378b038fc7571ba6ffd5f65592529a694f0315a7d436863c56029ed",
+          "member": "oxipng-10.1.1-aarch64-unknown-linux-musl/oxipng",
+          "install_as": "oxipng"
+        },
+        "win32-x86_64": {
+          "url": "https://github.com/oxipng/oxipng/releases/download/v10.1.1/oxipng-10.1.1-x86_64-pc-windows-msvc.zip",
+          "sha256": "0f57b33abb46c76258ac8e20be604a48208141d514bc2936b5200ed626976dd8",
+          "member": "oxipng-10.1.1-x86_64-pc-windows-msvc/oxipng.exe",
+          "install_as": "oxipng.exe"
+        },
+        "win32-i686": {
+          "url": "https://github.com/oxipng/oxipng/releases/download/v10.1.1/oxipng-10.1.1-i686-pc-windows-msvc.zip",
+          "sha256": "10da2fb7fb7b49c1e0cc62bb3cf721a9cd3031ff08433444bc73dcc90dc692bc",
+          "member": "oxipng-10.1.1-i686-pc-windows-msvc/oxipng.exe",
+          "install_as": "oxipng.exe"
+        }
+      }
+    }
+  },
+  "builds": {
+    "mozjpeg": {
+      "repo": "https://github.com/mozilla/mozjpeg.git",
+      "tag": "v4.1.1",
+      "license": "IJG + BSD-3-Clause + zlib",
+      "comment": [
+        "Нужен только для прогрессивного JPEG: MozJPEG подбирает сценарий сканов,",
+        "libjpeg-turbo использует фиксированный и проигрывает 2-4%.",
+        "Для baseline системного jpegtran достаточно, потому что `-revert` означает",
+        "именно «выключить нестандартные дефолты MozJPEG»."
+      ],
+      "apt": ["build-essential", "cmake", "nasm", "git"],
+      "target": "jpegtran",
+      "install_as": "jpegtran",
+      "cmake_args": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+        "-DENABLE_SHARED=0",
+        "-DENABLE_STATIC=1",
+        "-DWITH_TURBOJPEG=0",
+        "-DPNG_SUPPORTED=0"
+      ],
+      "cmake_args_comment": [
+        "POLICY_VERSION_MINIMUM передаётся безусловно: у mozjpeg в CMakeLists",
+        "стоит cmake_minimum_required(VERSION 2.8.12), и на CMake >= 4.0 это",
+        "жёсткая ошибка. PNG_SUPPORTED=0 снимает зависимость от libpng-dev,",
+        "ENABLE_SHARED=0 делает jpegtran самодостаточным относительно libjpeg,",
+        "иначе его затенила бы системная libjpeg.so."
+      ],
+      "simd_optional": true,
+      "simd_comment": "Без nasm собирается с -DWITH_SIMD=0: jpegtran работает в энтропийной области и SIMD не задействует."
+    },
+    "pngwolf": {
+      "repo": "https://github.com/jibsen/pngwolf-zopfli.git",
+      "tag": "v1.1.2",
+      "license": "GPL-3.0",
+      "comment": [
+        "Именно v1.1.2, а не вложенная в Windows 1.0.1: в 1.1.2 исправлена сборка",
+        "с современным zlib (1.0.1 не собиралась уже на GCC 6.3). Ценой этого",
+        "поменялся CLI — вместо --zopfli-iter=N теперь --out-deflate=zopfli,iter=N,",
+        "и исполняемый файл называется pngwolf. Зонд определяет форму по справке.",
+        "Сабмодули пиньованы коммитами 2017 года и обновлять их нельзя: иначе",
+        "всплывёт issue #5 с переехавшим файлом в libdeflate.",
+        "Риск: GAlib 1996 года под GCC 13 может потребовать патчей с #include."
+      ],
+      "apt": ["build-essential", "cmake", "git"],
+      "submodules": true,
+      "target": "pngwolf",
+      "install_as": "pngwolf",
+      "cmake_args": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+        "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=TRUE"
+      ],
+      "cmake_args_comment": [
+        "OpenMP отключён намеренно: он распараллеливает оценку популяции",
+        "генетического алгоритма, а цепочка вызывает pngwolf с",
+        "--max-evaluations=1, так что распараллеливать нечего. Зато уходит",
+        "зависимость от libgomp."
+      ],
+      "patches": "Tools/patches/pngwolf-zopfli"
+    }
+  }
+}

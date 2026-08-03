@@ -1,6 +1,6 @@
 # Image Catalyst
 
-Lossless PNG, JPEG and GIF image optimization / compression for Windows.
+Lossless PNG, JPEG and GIF image optimization / compression for **Windows and Linux**.
 
 |![Adobe Photoshop](https://cloud.githubusercontent.com/assets/3890881/12113971/831d0e22-b3b7-11e5-8f6d-a5cc8f993767.png)|![Image Catalyst](https://cloud.githubusercontent.com/assets/3890881/12110952/70ce4462-b3a2-11e5-8b29-a3822b246dfe.png)|
 |:----------|:----------|
@@ -8,164 +8,244 @@ Lossless PNG, JPEG and GIF image optimization / compression for Windows.
 
 Created by [**Lorents**](https://github.com/lorents17) & [**Res2001**](https://github.com/res2001)
 
+> **Version 3.0 is a rewrite.** The orchestrator moved from a 1300-line Windows
+> batch script to a Python 3 core, which is what makes Linux support possible and
+> what kills a long-standing bug where files with national characters in their
+> names were silently skipped. Version 2.7 is still in this repository and still
+> works; see [Migrating from 2.7](#migrating-from-27).
+
 ### Tools
 
-##### PNG:
-- AdvDef ([AdvanceComp](https://github.com/amadvance/advancecomp) 1.23)
-- DeflOpt 2.07
-- [PNGWolfZopfli](https://github.com/jibsen/pngwolf-zopfli) 1.0.1
-- [TruePNG](http://x128.ho.ua/pngutils.html) 0.6.2.2
+Image Catalyst compresses nothing itself — it orchestrates well-known optimizers
+and keeps whichever result is smallest. Run `icatalyst --doctor` to see exactly
+which ones were found on your machine and the exact commands that will be run.
 
-##### JPEG:
-- [JPEGinfo](http://rtfreesoft.blogspot.ru/2014/03/jpginfo.html) от 16.03.2014
-- [JPEGstripper](http://rtfreesoft.blogspot.ru/2014/03/jpegstripper.html) от 16.03.2014
-- JPEGTran ([MozJPEG](https://github.com/mozilla/mozjpeg) 3.1)
+##### PNG
+- [oxipng](https://github.com/oxipng/oxipng), [OptiPNG](https://optipng.sourceforge.net/), [Zopfli](https://github.com/google/zopfli) (`zopflipng`), [AdvanceComp](https://github.com/amadvance/advancecomp) (`advdef`)
+- Windows additionally: [TruePNG](http://x128.ho.ua/pngutils.html) 0.6.2.2, DeflOpt 2.07, [pngwolf-zopfli](https://github.com/jibsen/pngwolf-zopfli)
 
-##### GIF:
-- [GIFSicle](https://github.com/kohler/gifsicle) 1.88
+##### JPEG
+- [MozJPEG](https://github.com/mozilla/mozjpeg) or [libjpeg-turbo](https://libjpeg-turbo.org/) (`jpegtran`)
+
+##### GIF
+- [GIFSicle](https://github.com/kohler/gifsicle)
 
 ### System requirements
 
-Operating system — Windows XP SP3 and higher.
+- **Windows 10 or newer.** A release build of `iCatalyst.exe` needs nothing else.
+  Running from source needs Python 3.9+.
+  *(Version 2.7 supported Windows XP SP3; 3.0 does not, because Python 3.9 does not.)*
+- **Linux**: Python 3.9 or newer, plus the optimizers:
+  ```
+  sudo apt install optipng zopfli advancecomp gifsicle libjpeg-turbo-progs
+  make tools          # downloads oxipng, verifying its SHA-256
+  ```
+  `make apt` prints the exact package line for your distribution's naming, and
+  `make check` tells you what is still missing and what it costs you.
 
-### Command line options (cmd.exe)
+### Drag and Drop
+
+![Drag and Drop](https://cloud.githubusercontent.com/assets/3890881/7943598/28496fd4-096e-11e5-8df6-d6415e47caf8.png)
+
+- **Windows**: drop folders or files onto `iCatalyst.exe`, or onto
+  `iCatalyst-3.bat` when running from source.
+- **Linux**: install `icatalyst.desktop` (`cp icatalyst.desktop
+  ~/.local/share/applications/`) and drop folders onto its icon, or use
+  "Open With" in your file manager.
+- Images in sub-directories are optimized recursively.
+- **Any characters are allowed in paths** — national alphabets, spaces,
+  punctuation, emoji. This is the main behavioural change from 2.7.
+
+### Command line options
 
 ```
-call iCatalyst.bat [options] [add directories \ add files]
+icatalyst [options] [add directories \ add files]
 
 Options:
 
 /png:# PNG optimization mode (Non-Interlaced):
        1 - Compression level - Advanced
        2 - Compression level - Xtreme
-       0 - Skip (default)
+       0 - Skip
 
 /jpg:# JPEG optimization mode:
        1 - Encoding Process - Baseline
        2 - Encoding Process - Progressive
        3 - use settings of original image
-       0 - Skip (default)
+       0 - Skip
 
 /gif:# GIF optimization mode:
        1 - use settings of original image
-       0 - Skip (default)
+       0 - Skip
 
 "/outdir:#" image saving options:
-       true  - open dialog box for saving images (default)
+       true  - ask where to save images (default)
        false - replace original image with optimized
        "full path to directory" - specify directory to save images to.
-       for example: "/outdir:C:\temp". If the destination directory
-       does not exist, it will be created automatically.
+       If the destination directory does not exist, it will be created.
 
-Add directories \ Add files:
-- Specify full image paths and / or paths to directories containing images.
-  For example: "C:\Images" "C:\logo.png"
-- Full image paths should not contain any special characters such as
-  "&", "%", "(", ")" etc.
-- Images in sub-directories are optimized recursively.
+Additional options (new in 3.0):
+
+--verify            compare PNG pixel data before and after (slow, thorough)
+--strict-lossless   forbid changing RGB under fully transparent pixels
+--threads N         number of parallel jobs (0 or absent = CPU count)
+--stream            print rows in completion order instead of input order
+--tsv               machine-readable output instead of the table
+--doctor            show which tools were found and what will be run
+--picker NAME       auto, tk, zenity, kdialog, osascript, terminal or none
+--config FILE       use this config.ini instead of Tools/config.ini
+--width N           force table width
+--no-pause          do not wait for a key press at the end
 
 Examples:
-call iCatalyst.bat /gif:1 "/outdir:C:\photos" "C:\images"
-call iCatalyst.bat /png:2 /jpg:2 "/outdir:true" "C:\images"
+icatalyst /gif:1 "/outdir:/home/user/photos" "/home/user/images"
+icatalyst /png:2 /jpg:2 "/outdir:true" "C:\images"
 ```
 
-### Drag and Drop
+If a mode is not given on the command line, Image Catalyst asks — but only for
+formats actually present in the input, exactly as 2.7 did.
 
-![Drag and Drop](https://cloud.githubusercontent.com/assets/3890881/7943598/28496fd4-096e-11e5-8df6-d6415e47caf8.png)
+### What "lossless" means here
 
-- Full image paths should not contain any special characters such as `&`, `%`, `(`, `)`, `!` etc.
-- Images in sub-directories are optimized recursively.
+Pixels and alpha are never altered, with one deliberate exception that has been
+the shipped default since 2.7: `xtreme=/a1` in `Tools/config.ini` permits
+rewriting the **RGB values underneath fully transparent pixels**. Such pixels are
+invisible, so the image is visually identical, but the file is not byte-identical
+in the pixel data. Pass `--strict-lossless` to forbid it.
+
+Measured on 60 already-optimized system icons: `--strict-lossless` cost nothing
+at all — it actually compressed marginally *better* (−8.73% vs −8.65%), because
+the "dirty transparency" heuristic is not always a win and the candidate race
+picks whichever result is smaller.
+
+Every result is checked before it is accepted: the file must decode, keep its
+dimensions, keep its critical chunks, and be **strictly smaller** than the input.
+If it is not, the original is kept untouched.
 
 ### PNG optimization settings
 
-![PNG](https://cloud.githubusercontent.com/assets/3890881/10802485/3504f4e4-7dce-11e5-85cf-a07fdb822c2b.PNG)
-
 |Advanced|Xtreme|
 |:-------|:----------|
-|![Advanced](https://cloud.githubusercontent.com/assets/3890881/7943713/f816fd26-096e-11e5-8a8d-036e9fd443bf.png)|![Xtreme](https://cloud.githubusercontent.com/assets/3890881/12110960/92a49db6-b3a2-11e5-9953-adde90844087.png)|
-|Size — 55.57 KB; Optimization time — 1.5 s|Size — 54.67 KB; Optimization time — 7.5 s|
-|`TruePNG` ([zlib](https://github.com/madler/zlib)) + `Advdef` ([libdeflate](https://github.com/ebiggers/libdeflate))|`TruePNG` ([zlib](https://github.com/madler/zlib)) + `PNGWolfZopfli` ([zopfli](https://github.com/google/zopfli))||Compression ratio is about 10% higher compared to Adobe Photoshop CC 2015 (Export as)|Compression ratio is about 2% higher compared to Advanced optimization modes, compression speed is 5 times better|
+|Structural optimization plus one deflate pass. Seconds per image.|Exhaustive structural search plus Zopfli-class compression. 5–15× slower, a few percent smaller.|
 
-- `Skip` — skip optimization of PNG images.
+Both modes race several independent chains and keep the smallest result, so
+adding a tool can only improve the outcome, never worsen it. Xtreme is guaranteed
+never to produce a larger file than Advanced.
 
-Interlace option:
-- `None` — displays the image in a browser only when download is complete.
-- `Interlaced` — displays low-resolution versions of the image in a browser as the file downloads. Interlacing makes download time seem shorter, but it also increases file size (not support). 
+`Interlaced` output is not supported; interlaced input is read correctly and
+written non-interlaced.
 
 ### JPEG optimization settings
 
-![JPEG](https://cloud.githubusercontent.com/assets/3890881/10802484/34d79cec-7dce-11e5-886f-ea71fdc93214.PNG)
-
 |Baseline|Progressive|
 |:-------|:----------|
-|![Baseline](https://cloud.githubusercontent.com/assets/3890881/7943666/9c3c1324-096e-11e5-8cf1-bceade0ebd85.gif)|![Progressive](https://cloud.githubusercontent.com/assets/3890881/7943679/ace1271e-096e-11e5-9ca4-6f33f421ca52.gif)|
-|For image < 10 KB, it is recommended to use — `Baseline` ([read more](http://yuiblog.com/blog/2008/12/05/imageopt-4/))|For image > 10 KB, it is recommended to use — `Progressive` ([read more](http://yuiblog.com/blog/2008/12/05/imageopt-4/))|
+|For images < 10 KB ([read more](http://yuiblog.com/blog/2008/12/05/imageopt-4/))|For images > 10 KB ([read more](http://yuiblog.com/blog/2008/12/05/imageopt-4/))|
 
-- `Default` — uses settings of original images;
-- `Skip` — skip optimization of JPEG images.
+`Default` keeps whatever the original used. JPEG optimization is a lossless
+coefficient transform: `jpegtran` never re-encodes pixel data.
 
-### GIF optimization settings
+### Cross-platform differences, honestly
 
-![GIF](https://cloud.githubusercontent.com/assets/3890881/10802483/34d638a2-7dce-11e5-9b95-e39aa476c73d.PNG)
+PNG output is **not byte-identical between Windows and Linux**, and cannot be:
+TruePNG and DeflOpt are closed-source Windows-only freeware with no equivalents.
+Neither platform's output is "the correct" one; both are lossless.
 
-- `Default` — uses settings of original images;
-- `Skip` — skip optimization of GIF images.
+| Step | Windows | Linux |
+|---|---|---|
+| PNG Advanced | TruePNG → DeflOpt → advdef → DeflOpt ‖ oxipng | optipng → advdef ‖ oxipng |
+| PNG Xtreme | TruePNG → pngwolf (Zopfli) → DeflOpt ‖ oxipng | optipng → zopflipng ‖ optipng → advdef ‖ oxipng |
+| JPEG | MozJPEG `jpegtran` | libjpeg-turbo `jpegtran`; MozJPEG optional via `make tools-build`, worth 2–4% on progressive |
+| GIF | gifsicle | the same gifsicle, the same flags |
+| Folder dialog | native Windows dialog | zenity, kdialog or a terminal prompt |
+
+`‖` means the chains are raced and the smaller result wins.
 
 ### Config.ini
 
-Open the file `Tools\config.ini` with any text editor and follow the instructions.
+`Tools/config.ini` keeps every key it had in 2.7 — existing configurations work
+unchanged. New optional keys: `profile` (`auto`/`windows`/`posix`), `timeout`,
+`picker`, `preserve_mtime`, `xtreme_iterations`, and platform-neutral equivalents
+of the TruePNG flag strings (`gamma`, `keep_colortype`, `keep_bitdepth`,
+`keep_palette`, `advanced_dirty_transparency`, `xtreme_dirty_transparency`).
+`pngtags`/`jpegtags`/`giftags` additionally accept `keep-icc`, which preserves
+colour profiles that `true` would strip.
 
-```
-[options]
-;Number of streams. If value is 0, the %NUMBER_OF_PROCESSORS% value is used
-thread=0
+The file is never rewritten by the program.
 
-;Image saving options:
-;true  - open dialog box for saving images;
-;false - replace original image with optimized;
-;path  - directory for output files.
-outdir=true
+### Migrating from 2.7
 
-;Check update
-update=true
+Both implementations currently live side by side. `iCatalyst.bat` is still
+version 2.7 and still works; the new core is `python3 -m icatalyst`, or
+`iCatalyst-3.bat` on Windows. The legacy files will be removed only after the
+`parity-windows` job in CI confirms on real binaries that the new core compresses
+no worse.
 
-[PNG]
-;PNG optimization modes:
-;/a# - PNG dirty transparency 0=Clean, 1=Optimize;
-;/g# - PNG gamma 0=Remove, 1=Apply & Remove, 2=Keep;
-;/na - PNG don't change RGB values for fully transparent pixels;
-;/nc - PNG don't change ColorType and BitDepth;
-;/np - PNG don't change Palette.
-xtreme=/a1 /g0
-advanced=/a0 /g0
+Behavioural changes worth knowing about:
 
-;Remove PNG Metadata (Chunks)
-pngtags=true
-
-[JPEG]
-;Remove JPEG Metadata
-jpegtags=true
-
-[GIF]
-;Remove GIF Metadata
-giftags=true
-```
+- Paths with any characters now work. In 2.7 a folder named `Фото — копия`
+  silently lost its entire contents, because the em dash does not exist in cp866.
+- A GIF's loop count survives metadata removal. In 2.7 `giftags=true` passed
+  `--no-extensions` to gifsicle, which dropped the NETSCAPE extension and turned
+  an infinitely looping GIF into a play-once one.
+- Interrupting with Ctrl-C now stops promptly and never leaves a truncated file.
+- Two input files with the same name no longer overwrite each other in the output
+  directory.
+- Modification times are preserved by default (`preserve_mtime=false` restores
+  the old behaviour).
+- A batch run with no `/outdir` and no terminal to ask in now stops with an error
+  instead of silently overwriting the originals.
 
 ### Additionally
-- To pause optimization process click on right mouse button in the command prompt window and choose "Select all" in the context menu. To resume click right mouse button again.
-- By default optimization runs in multi-threading mode. It is not recommended to run in more than one copy of the application, as it will significantly reduce both the image optimization speed and system performance overall. To disable multi-threading mode, open the file `Tools\config.ini` with any text editor and follow the instructions.
+
+- By default optimization runs in parallel, one job per CPU core. Use
+  `--threads N` or the `thread` key in `config.ini` to change that. Measured on
+  16 cores: 177 s → 38 s, with byte-identical output.
+- To pause on Windows, click the right mouse button in the console window and
+  choose "Select all"; click again to resume.
+
+### Building
+
+Nothing needs to be built to use Image Catalyst from source — it is plain Python.
+The build targets exist to produce distributable artifacts:
+
+```
+make deb        # .deb package, checked with lintian
+make binary     # self-contained Linux executable (no Python needed to run it)
+make exe        # iCatalyst.exe (Windows only)
+make tools      # download prebuilt optimizers, verifying their SHA-256
+make test       # the full test suite; passes with no optimizers installed
+```
+
+`make binary` and `make exe` use PyInstaller, which is a **build-time**
+dependency only — the program itself never needs anything beyond the standard
+library. On Ubuntu 24.04 and newer, PEP 668 forbids installing into the system
+Python, so `make binary` creates its own virtual environment.
+
+GitHub Actions builds all of this on a tag, but only **after** the test suite and
+the 2.7 parity harness are green: attaching a package built from knowingly broken
+code to a release is the worst outcome available here. Releases are created as
+drafts so the artifact list can be looked at before publishing.
+
+| Artifact | For whom |
+|---|---|
+| `icatalyst_<version>_all.deb` | Debian, Ubuntu, Mint — installs the command, the menu entry, the man page, and pulls the optimizers in via `apt` |
+| `iCatalyst-<tag>-linux-x86_64.tar.gz` | other distributions, or running without installing anything |
+| `iCatalyst-<tag>-windows-x86_64.zip` | Windows: `iCatalyst.exe` plus the bundled optimizers next to it |
+| `iCatalyst-tools-linux-x86_64.tar.gz` | prebuilt MozJPEG, pngwolf and oxipng, so Linux users need not compile |
+| `third-party-sources.tar.gz` | corresponding sources of the GPL components, as their licenses require |
 
 ### Thanks
+
 - Thanks to the authors of the applications that are used in the project;
 - Thanks to the participants of [encode.ru](http://encode.ru/), [forum.ru-board.com](http://forum.ru-board.com/), [forum.script-coding.com](http://script-coding.com/forum/), [forum.vingrad.ru](http://forum.vingrad.ru/) and [cyberforum.ru](http://www.cyberforum.ru/) for contribution to the development of the project;
 - Thanks [**X128**](http://x128.ho.ua/) for his huge contribution to the development of the project.
 
-### Alpha version
-https://github.com/res2001/iCatalyst
-
 ### License
-This software is released under the terms of the [MIT](https://github.com/lorents17/iCatalyst/blob/master/LICENSE.md) license.
+
+This software is released under the terms of the [MIT](LICENSE.md) license.
+Third-party components and their licenses are listed in [THIRD-PARTY.md](THIRD-PARTY.md).
 
 ### Future plans
+
 - add support of optimization of SVG;
 - add support of optimization of PNG and JPEG lossy.
