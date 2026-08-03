@@ -23,9 +23,12 @@ class ScenarioTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
-        self.config = support.empty_config(self.base)
+        # Профиль posix задан явно: на windows-раннере по умолчанию
+        # выбирается Windows-профиль, и эти тесты проверяли бы совсем
+        # другие инструменты.
+        self.config = support.posix_config(self.base)
         self.images = self.base / "Изображения"
         self.images.mkdir()
         self.png = self.images / "лого.png"
@@ -110,7 +113,9 @@ class HappyPathTest(ScenarioTest):
         self.assertEqual(code, 0, err)
         rows = {Path(r["source"]).name: r for r in support.tsv_rows(out)}
         self.assertEqual(rows["лого.png"]["status"], "ok")
-        self.assertIn("zopflipng", rows["лого.png"]["chain"])
+        # Две optipng-цепочки Xtreme слиты в одну: дорогой `optipng -o7` не
+        # должен выполняться дважды с теми же аргументами.
+        self.assertEqual(rows["лого.png"]["chain"], "optipng+zopfli")
 
     def test_in_place_replaces_the_original(self):
         code, rows, err = self.run_modes(in_place=True)
@@ -129,10 +134,17 @@ class HappyPathTest(ScenarioTest):
 class RatchetTest(ScenarioTest):
     """Ограничитель размера D2: результат не может оказаться хуже входа."""
 
+    #: Удаление метаданных JPEG выполняется внутри программы, на чистом Python,
+    #: поэтому инъекция сбоев во внешние утилиты его не касается: этот шаг
+    #: продолжает уменьшать файл даже при полностью сломанном jpegtran. Это
+    #: полезное свойство, и оно утверждается отдельно, а не исключается.
+    _EXTERNAL_ONLY = ("лого.png", "анимация.gif")
+
     def test_grown_result_is_rejected(self):
         code, rows, err = self.run_modes(mode="grow")
         self.assertEqual(code, 0, err)
-        for name, row in rows.items():
+        for name in self._EXTERNAL_ONLY:
+            row = rows[name]
             self.assertEqual(row["status"], "kept", "%s: %s" % (name, row))
             self.assertEqual(row["optimized"], row["original"])
             # При выводе в каталог оригинал всё равно копируется — так делал
@@ -141,10 +153,21 @@ class RatchetTest(ScenarioTest):
                                         row["destination"], shallow=False))
         self.assertOriginalsIntact()
 
+    def test_internal_step_works_even_with_a_broken_external_tool(self):
+        """Сломанный jpegtran не мешает удалить метаданные средствами Python."""
+        code, rows, err = self.run_modes(mode="grow")
+        self.assertEqual(code, 0, err)
+        row = rows["фото.jpg"]
+        self.assertEqual(row["status"], "ok", row)
+        self.assertLess(int(row["optimized"]), int(row["original"]))
+        self.assertEqual(imgcheck.jpeg_encoding(
+            Path(row["destination"]).read_bytes()), "baseline")
+        self.assertOriginalsIntact()
+
     def test_equal_result_is_rejected(self):
         _, rows, _ = self.run_modes(mode="equal")
-        for row in rows.values():
-            self.assertEqual(row["status"], "kept")
+        for name in self._EXTERNAL_ONLY:
+            self.assertEqual(rows[name]["status"], "kept")
         self.assertOriginalsIntact()
 
     def test_zero_length_result_is_a_failure(self):

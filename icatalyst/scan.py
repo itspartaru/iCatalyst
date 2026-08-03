@@ -88,7 +88,13 @@ def scan(inputs: Sequence[str]) -> ScanResult:
     result = ScanResult()
     seen: Set[str] = set()
     for raw in inputs:
-        path = Path(os.path.abspath(os.path.expanduser(str(raw))))
+        # realpath, а не abspath: на Windows пользователю (и tempfile) достаётся
+        # короткая форма 8.3 вида C:\Users\RUNNER~1, тогда как OutputMapper
+        # нормализует каталог вывода. Из-за расхождения правило «каталог вывода
+        # совпадает с каталогом файла → работать на месте» молча не срабатывало,
+        # и файлы копировались вместо обработки на месте. Заодно снимаются
+        # симлинки, так что обе стороны сравнения приведены к одной форме.
+        path = Path(os.path.realpath(os.path.expanduser(str(raw))))
         key = os.path.normcase(str(path)) if os.name == "nt" else str(path)
         if key in seen:
             continue

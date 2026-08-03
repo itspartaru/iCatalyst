@@ -91,15 +91,36 @@ def captured():
         sys.stdout, sys.stderr, sys.stdin = saved
 
 
-def empty_config(directory: Path) -> Path:
+def tempdir() -> Path:
+    """Временный каталог в нормализованной форме.
+
+    `resolve()` обязателен: на Windows `tempfile` отдаёт короткую форму 8.3
+    (`C:\\Users\\RUNNER~1`), а приложение нормализует пути. Без приведения к
+    одной форме сравнения путей в тестах расходятся только на windows-раннере.
+    """
+    import tempfile as _tempfile
+    return Path(_tempfile.mkdtemp()).resolve()
+
+
+def empty_config(directory: Path, extra: str = "") -> Path:
     """Создать пустой config.ini.
 
     Тесты обязаны им пользоваться: иначе подхватится `Tools/config.ini` из
     репозитория, где `outdir=true`, и прогон полез бы спрашивать каталог.
     """
     path = Path(directory) / "test-config.ini"
-    path.write_text("[options]\n", encoding="utf-8")
+    path.write_text("[options]\n" + extra, encoding="utf-8")
     return path
+
+
+def posix_config(directory: Path, extra: str = "") -> Path:
+    """Конфигурация с принудительным POSIX-профилем.
+
+    Нужна тестам, которые проверяют именно цепочки optipng/zopflipng: на
+    windows-раннере профиль по умолчанию — Windows, и такой тест проверял бы
+    совсем другие инструменты.
+    """
+    return empty_config(directory, "profile=posix\n" + extra)
 
 
 def run_cli(args: Sequence[str], tools_dir: Optional[Path] = None,

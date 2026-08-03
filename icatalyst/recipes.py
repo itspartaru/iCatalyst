@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from . import config as cfgmod
+from . import imgcheck
 
 #: Уровень optipng для режима Advanced. Режимы определены семантически:
 #: Advanced — структурная оптимизация и один проход deflate (секунды),
@@ -32,11 +33,16 @@ OPTIPNG_XTREME = "-o7"
 @dataclass(frozen=True)
 class Step:
     name: str
-    #: Логическое имя инструмента для Toolbox.
+    #: Логическое имя инструмента для Toolbox. Пустая строка — шаг выполняется
+    #: внутри процесса, см. `func`.
     tool: str
     #: Собирает аргументы. Возвращает None, если шаг не нужен при этой
     #: конфигурации (например, удаление метаданных выключено).
-    argv: Callable
+    argv: Optional[Callable] = None
+    #: Шаг без внешней утилиты: принимает ctx, возвращает байты результата или
+    #: None, если делать нечего. Нужен там, где чистый Python справляется сам и
+    #: избавляет от закрытого бинарника.
+    func: Optional[Callable] = None
     #: `inplace` — инструмент правит ctx.work на месте;
     #: `out` — пишет в ctx.out, и драйвер решает, принимать ли результат.
     produces: str = "inplace"
@@ -98,7 +104,8 @@ def _optipng_args(ctx, level: str) -> list:
 
 def _zopflipng_args(ctx, lossy_transparent: bool = False) -> Optional[list]:
     opts = ctx.cfg.png_mode(ctx.mode)
-    if lossy_transparent and not opts.dirty_transparency:
+    if lossy_transparent and not (opts.dirty_transparency
+                                  and ctx.scratch.get("has_transparency", True)):
         return None
     args = ["-y", "--iterations=%d" % ctx.cfg.xtreme_iterations, "--filters=0me"]
     if lossy_transparent:
@@ -125,7 +132,8 @@ def _oxipng_args(ctx, level: str, zopfli: bool, alpha: bool) -> Optional[list]:
     tool = ctx.tools.find("oxipng")
     opts = ctx.cfg.png_mode(ctx.mode)
     if alpha and not (opts.dirty_transparency and tool is not None
-                      and tool.has("alpha")):
+                      and tool.has("alpha")
+                      and ctx.scratch.get("has_transparency", True)):
         return None
     args = ["--quiet", "-o", level, "-t", "1"]
     if zopfli and tool is not None and tool.has("zopfli"):
@@ -201,18 +209,23 @@ def _png_posix(mode: int, cfg) -> Recipe:
     else:
         optipng = _optipng_step(OPTIPNG_XTREME)
         chains = (
-            Chain("optipng+zopflipng",
+            # Одна цепочка, а не две: `optipng -o7` — самый дорогой шаг режима,
+            # и запускать его дважды с теми же аргументами на том же входе
+            # бессмысленно, инструмент детерминирован. Дальше идут все
+            # deflate-кандидаты подряд, каждый под ограничителем размера,
+            # поэтому шаг применяется только если действительно уменьшил файл.
+            # zopflipng объявлен необязательным намеренно: тогда эта же цепочка
+            # работает и там, где его нет, и отдельная не нужна.
+            Chain("optipng+zopfli",
                   (optipng,
                    Step("zopflipng", "zopflipng",
                         lambda ctx: _zopflipng_args(ctx, lossy_transparent=False),
-                        produces="out"),
+                        produces="out", optional=True),
                    Step("zopflipng-alpha", "zopflipng",
                         lambda ctx: _zopflipng_args(ctx, lossy_transparent=True),
-                        produces="out", optional=True)),
-                  ("optipng", "zopflipng")),
-            Chain("optipng+advdef-zopfli",
-                  (optipng, _advdef_step("advdef-zopfli", "-4")),
-                  ("optipng", "advdef")),
+                        produces="out", optional=True),
+                   _advdef_step("advdef-zopfli", "-4")),
+                  ("optipng",)),
             _oxipng_chain(mode),
             # Цепочки Advanced участвуют и здесь. Иначе обещание «Xtreme не хуже
             # Advanced» держится случайно: измерено, что на 16-битном сером
@@ -380,12 +393,34 @@ def _jpeg_target(ctx) -> str:
     return "progressive" if ctx.scratch.get("orig_progressive") else "baseline"
 
 
+def _strip_jpeg(ctx) -> Optional[bytes]:
+    """Снять маркеры метаданных JPEG средствами Python.
+
+    Заменяет закрытый `jpegstripper.exe`. Нужен не для красоты: `jpegtran -copy
+    none` не переносит метаданные исходника, но APP0 JFIF записывает **заново**
+    сам, и результат 2.7 оказывался на эти 18 байт меньше. Харнесс паритета это
+    и поймал.
+    """
+    if ctx.cfg.jpegtags == cfgmod.STRIP_NONE:
+        return None
+    with open(str(ctx.work), "rb") as fh:
+        data = fh.read()
+    try:
+        return imgcheck.strip_jpeg_metadata(
+            data, keep_icc=ctx.cfg.jpegtags == cfgmod.STRIP_KEEP_ICC)
+    except imgcheck.ImageError:
+        return None
+
+
 def _jpeg(mode: int, cfg) -> Recipe:
     label = {1: "Baseline", 2: "Progressive", 3: "Default"}[mode]
-    step = Step("jpegtran", "jpegtran",
-                lambda ctx: _jpeg_args(ctx, _jpeg_target(ctx)), produces="out")
+    steps = (
+        Step("jpegtran", "jpegtran",
+             lambda ctx: _jpeg_args(ctx, _jpeg_target(ctx)), produces="out"),
+        Step("strip-metadata", "", func=_strip_jpeg, produces="out", optional=True),
+    )
     return Recipe("jpg", mode, label,
-                  (Chain("jpegtran", (step,), ("jpegtran",)),))
+                  (Chain("jpegtran", steps, ("jpegtran",)),))
 
 
 # ---------------------------------------------------------------------------

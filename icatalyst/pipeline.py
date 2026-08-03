@@ -152,6 +152,9 @@ class Runner:
     # -- выполнение --------------------------------------------------------
 
     def _run_step(self, ctx: Ctx, step) -> None:
+        if step.func is not None:
+            self._run_internal_step(ctx, step)
+            return
         tool = self.tools.find(step.tool)
         if tool is None:
             if not step.optional:
@@ -233,6 +236,29 @@ class Runner:
             size = os.path.getsize(long_path(ctx.work))
             if size == 0 or size >= os.path.getsize(long_path(backup)):
                 shutil.copyfile(long_path(backup), long_path(ctx.work))
+
+    def _run_internal_step(self, ctx: Ctx, step) -> None:
+        """Шаг без внешней утилиты. Ограничитель размера применяется так же."""
+        try:
+            payload = step.func(ctx)
+        except Exception as exc:  # noqa: BLE001 — шаг не должен ронять файл
+            if step.optional:
+                self.tools.warn_once("internal:%s" % step.name, str(exc))
+                return
+            raise StepFailed("шаг %s: %s" % (step.name, exc))
+        if payload is None:
+            return
+        if not payload:
+            message = "шаг %s вернул пустой результат" % step.name
+            if step.optional:
+                self.tools.warn_once("empty:%s" % step.name, message)
+                return
+            raise StepFailed(message)
+        candidate = self._temp(ctx.work.suffix)
+        with open(long_path(candidate), "wb") as fh:
+            fh.write(payload)
+        if len(payload) < os.path.getsize(long_path(ctx.work)):
+            ctx.work = candidate
 
     def _run_chain(self, chain, seed: Path, job: Job, scratch: Dict) -> Optional[Path]:
         work = self._temp(seed.suffix)
@@ -349,6 +375,16 @@ class Runner:
 
     def _prepare_scratch(self, job: Job, src_data: bytes) -> Dict:
         scratch: Dict = {}
+        if job.fmt == "png":
+            try:
+                # Дешёвая проверка по заголовку, без раскодирования пикселей:
+                # если у изображения нет ни альфа-канала, ни чанка tRNS, то
+                # полностью прозрачных пикселей в нём нет, и шаг «грязной
+                # прозрачности» не способен ничего изменить. Пропускать его —
+                # значит не запускать zopfli и oxipng по второму разу впустую.
+                scratch["has_transparency"] = imgcheck.read_png(src_data).has_alpha
+            except imgcheck.ImageError:
+                scratch["has_transparency"] = True
         if job.fmt == "gif":
             try:
                 info = imgcheck.read_gif(src_data, with_frames=False)

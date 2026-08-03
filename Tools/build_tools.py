@@ -49,6 +49,25 @@ class BuildError(Exception):
     pass
 
 
+def _configure_stdout() -> None:
+    """Перевести вывод в UTF-8.
+
+    Скрипт печатает по-русски, а на windows-раннере stdout — cp1252, и первое же
+    сообщение падало с UnicodeEncodeError. Приложение делает то же в
+    `report.configure_streams`.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="backslashreplace")
+            except (OSError, ValueError):
+                pass
+
+
+_configure_stdout()
+
+
 def log(message: str) -> None:
     sys.stdout.write("%s\n" % message)
     sys.stdout.flush()

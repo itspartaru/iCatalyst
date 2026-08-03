@@ -201,6 +201,9 @@ def _doctor(cfg, tools, reporter: report.Reporter) -> int:
             for chain in chains:
                 ctx = _Stub(fmt, mode)
                 for step in chain.steps:
+                    if step.func is not None:
+                        reporter.line("      (внутри программы) %s" % step.name)
+                        continue
                     tool = tools.find(step.tool)
                     if tool is None:
                         continue

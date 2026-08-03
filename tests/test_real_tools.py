@@ -30,7 +30,7 @@ def requires(*names):
 class RealToolTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.config = support.empty_config(self.base)
         self.images = self.base / "Фото — копия"
         self.images.mkdir()

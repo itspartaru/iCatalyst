@@ -696,6 +696,64 @@ def gif_canvas_frames(data: bytes) -> list:
 # Проверки, вызываемые конвейером
 # ---------------------------------------------------------------------------
 
+#: Маркеры метаданных JPEG: APPn и комментарий.
+_JPEG_METADATA = frozenset(set(range(0xE0, 0xF0)) | {0xFE})
+
+
+def strip_jpeg_metadata(data: bytes, keep_icc: bool = False) -> bytes:
+    """Удалить маркеры метаданных JPEG, не касаясь энтропийных данных.
+
+    Заменяет закрытый `jpegstripper.exe`. Нужен потому, что `jpegtran -copy
+    none` метаданные исходника не переносит, но APP0 JFIF записывает **заново**
+    сам: это ровно 18 байт, на которые результат 2.7 оказывался меньше.
+
+    Сегмент APP0 удаляется только когда запрошено полное удаление метаданных.
+    Формально файл перестаёт быть JFIF, но декодеры этого не требуют, и версия
+    2.7 поступала так же все годы своей жизни.
+    """
+    if not data.startswith(b"\xff\xd8"):
+        raise ImageError("не JPEG: нет маркера SOI")
+    out = bytearray(b"\xff\xd8")
+    pos = 2
+    end = len(data)
+    while pos < end - 1:
+        if data[pos] != 0xFF:
+            pos += 1
+            continue
+        marker = data[pos + 1]
+        if marker == 0xFF or marker in _JPEG_STANDALONE:
+            pos += 2
+            continue
+        if marker == 0xD9:
+            out += b"\xff\xd9"
+            return bytes(out)
+        if pos + 4 > end:
+            raise ImageError("JPEG обрывается в заголовке сегмента")
+        (seg_len,) = struct.unpack_from(">H", data, pos + 2)
+        if seg_len < 2 or pos + 2 + seg_len > end:
+            raise ImageError("JPEG: некорректная длина сегмента 0x%02X" % marker)
+        body = data[pos + 4:pos + 2 + seg_len]
+        drop = marker in _JPEG_METADATA
+        if keep_icc and marker == 0xE2 and body[:11] == b"ICC_PROFILE":
+            drop = False
+        if not drop:
+            out += data[pos:pos + 2 + seg_len]
+        pos += 2 + seg_len
+        if marker == 0xDA:
+            # Дальше энтропийные данные: копируем как есть до маркера конца.
+            tail = pos
+            while tail < end - 1:
+                if data[tail] == 0xFF and data[tail + 1] not in (0x00, 0xFF) and \
+                        not (0xD0 <= data[tail + 1] <= 0xD7):
+                    break
+                tail += 1
+            out += data[pos:tail]
+            pos = tail
+    if not out.endswith(b"\xff\xd9"):
+        out += b"\xff\xd9"
+    return bytes(out)
+
+
 def validate(path, fmt: Optional[str] = None) -> str:
     """То же, что `validate_data`, но читает файл с диска."""
     with open(path, "rb") as fh:

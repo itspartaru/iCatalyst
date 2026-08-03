@@ -42,6 +42,9 @@ jobs:
   parity:
     name: паритет с версией 2.7
     runs-on: windows-latest
+    # Страховка: цепочка 2.7 — код 2010 года с циклами ожидания
+    # без выхода, и занимать раннер часами она не должна.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

@@ -25,7 +25,7 @@ class CorpusTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
-        cls.base = Path(cls._tmp.name)
+        cls.base = Path(cls._tmp.name).resolve()
         cls.tools = support.install_fake_tools(cls.base / "fakebin")
         cls.config = support.empty_config(cls.base)
         cls.images = cls.base / "корпус"
@@ -133,7 +133,7 @@ class CorpusTest(unittest.TestCase):
 class ArgumentTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
         self.config = support.empty_config(self.base)
         self.images = self.base / "img"
@@ -225,7 +225,7 @@ class HostileEnvironmentTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
         self.config = support.empty_config(self.base)
         self.images = self.base / "Тест — тире"

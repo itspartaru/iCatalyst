@@ -24,7 +24,7 @@ class DeterminismTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
-        cls.base = Path(cls._tmp.name)
+        cls.base = Path(cls._tmp.name).resolve()
         cls.tools = support.install_fake_tools(cls.base / "fakebin")
         cls.config = support.empty_config(cls.base)
         cls.images = cls.base / "Фото — копия"
@@ -168,7 +168,7 @@ class InterruptTest(unittest.TestCase):
 
         if os.name == "nt":
             self.skipTest("SIGINT в Windows работает иначе")
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         tools = support.install_fake_tools(tmp / "fakebin")
         config = support.empty_config(tmp)
         images = tmp / "Фото — копия"
@@ -246,7 +246,7 @@ class WorkerCountTest(unittest.TestCase):
         self.assertEqual(workers, min(32, os.cpu_count() or 1))
 
     def test_explicit_thread_count_is_honoured(self):
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         config = tmp / "c.ini"
         config.write_text("[options]\nthread=3\n", encoding="utf-8")
         from icatalyst import config as cfgmod
@@ -270,7 +270,7 @@ class MapperThreadSafetyTest(unittest.TestCase):
         from pathlib import Path as P
         from icatalyst.paths import OutputMapper
 
-        tmp = P(tempfile.mkdtemp())
+        tmp = P(tempfile.mkdtemp()).resolve()
         root = tmp / "Фото — копия"
         (root / "вложенная").mkdir(parents=True)
         sources = []
@@ -298,7 +298,7 @@ class MapperThreadSafetyTest(unittest.TestCase):
         from pathlib import Path as P
         from icatalyst.paths import OutputMapper
 
-        tmp = P(tempfile.mkdtemp())
+        tmp = P(tempfile.mkdtemp()).resolve()
         sources = []
         for index in range(100):
             folder = tmp / ("вход %03d" % index)

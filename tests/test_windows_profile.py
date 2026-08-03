@@ -25,7 +25,7 @@ def _windows_config(directory: Path, extra: str = "") -> Path:
 
 class ProfileSelectionTest(unittest.TestCase):
     def test_profile_key_forces_the_toolset(self):
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         cfg = cfgmod.load(str(_windows_config(tmp)))
         self.assertEqual(cfg.profile, "windows")
         self.assertTrue(recipes.use_windows_profile(cfg))
@@ -34,7 +34,7 @@ class ProfileSelectionTest(unittest.TestCase):
         self.assertEqual([c.name for c in recipe.chains], ["truepng", "oxipng"])
 
     def test_posix_profile_can_be_forced_too(self):
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         path = tmp / "c.ini"
         path.write_text("[options]\nprofile=posix\n", encoding="utf-8")
         cfg = cfgmod.load(str(path))
@@ -44,14 +44,14 @@ class ProfileSelectionTest(unittest.TestCase):
 
     def test_explicit_profile_disables_the_fallback(self):
         """Пользователь выбрал набор сознательно — молча подменять его нельзя."""
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         cfg = cfgmod.load(str(_windows_config(tmp)))
         self.assertIsNone(recipes.fallback_recipe("png", 1, cfg))
         auto = cfgmod.Config()
         self.assertIsNotNone(recipes.fallback_recipe("png", 1, auto))
 
     def test_invalid_profile_is_rejected(self):
-        tmp = Path(tempfile.mkdtemp())
+        tmp = Path(tempfile.mkdtemp()).resolve()
         path = tmp / "c.ini"
         path.write_text("[options]\nprofile=bsd\n", encoding="utf-8")
         with self.assertRaises(cfgmod.ConfigError):
@@ -61,7 +61,7 @@ class ProfileSelectionTest(unittest.TestCase):
 class WindowsChainTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
         self.config = _windows_config(self.base)
         self.images = self.base / "Фото — копия"
@@ -148,7 +148,7 @@ class CandidateRaceTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.config = _windows_config(self.base)
         self.images = self.base / "img"
         self.images.mkdir()
@@ -204,7 +204,7 @@ class PngwolfArgvTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
         self.config = _windows_config(self.base)
         self.images = self.base / "img"

@@ -48,7 +48,7 @@ class ParityTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
-        cls.base = Path(cls._tmp.name)
+        cls.base = Path(cls._tmp.name).resolve()
         cls.images = cls.base / "corpus"
         cls.images.mkdir()
         cls.sources = {}
@@ -71,11 +71,23 @@ class ParityTest(unittest.TestCase):
             (cls.images / name).write_bytes(data)
             cls.sources[name] = data
 
-        # Проверка обновлений стучится в сеть по открытому HTTP и в CI может
-        # висеть, поэтому на время прогона она выключается, а файл возвращается.
+        # Конфигурация 2.7 правится на время прогона и возвращается в tearDown.
+        # Два изменения, и оба обязательны, иначе харнесс зависает:
+        #
+        # `update=false` — проверка обновлений стучится на x128.ho.ua по
+        # открытому HTTP, а `:end` ждёт её файл-флаг циклом без выхода.
+        #
+        # `thread=1` — в многопоточном режиме `:createthread` порождает рабочие
+        # процессы через `start /b`, а `:waithread` крутит `:waitflag` до
+        # исчезновения файлов-блокировок. Если хоть один внук не смог удалить
+        # свой .lck, цикл бесконечен, и убить его нельзя: subprocess прибивает
+        # только прямого потомка, а не внуков. В однопоточном режиме
+        # `:createthread` вызывает `:threadwork` напрямую, ни блокировок, ни
+        # внуков не возникает, а для сравнения размеров потоки и не нужны.
         cls._saved_config = LEGACY_CONFIG.read_bytes()
         text = cls._saved_config.decode("cp1251", "replace")
         text = text.replace("update=true", "update=false")
+        text = text.replace("thread=0", "thread=1")
         LEGACY_CONFIG.write_bytes(text.encode("cp1251", "replace"))
 
         cls.old_dir = cls.base / "old"
@@ -88,25 +100,55 @@ class ParityTest(unittest.TestCase):
         LEGACY_CONFIG.write_bytes(cls._saved_config)
         cls._tmp.cleanup()
 
+    #: Верхняя граница на прогон каждой реализации. Полчаса, стоявшие здесь
+    #: раньше, означали, что подвисший харнесс просто занимает раннер и никакой
+    #: диагностики не даёт.
+    TIMEOUT = 420
+
     @classmethod
     def _run_legacy(cls, out_dir: Path) -> str:
-        proc = subprocess.run(
-            ["cmd.exe", "/c", str(LEGACY_BAT), "/png:1", "/jpg:1", "/gif:1",
-             "/outdir:%s" % out_dir, str(cls.images)],
-            cwd=str(REPO_ROOT), stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=1800)
-        return proc.stdout.decode("cp866", "replace")
+        """Запустить цепочку 2.7 через обёртку с `call`.
+
+        Обёртка обязательна. `:dopause` (`iCatalyst.bat:1268`) ищет собственный
+        путь в `%CMDCMDLINE%` и, найдя, выполняет `pause` — так он отличает
+        запуск двойным щелчком от вызова из скрипта. При `cmd /c <путь к .bat>`
+        путь в командной строке присутствует, и прогон останавливается в
+        ожидании нажатия клавиши. С `call` из промежуточного файла в
+        `%CMDCMDLINE%` оказывается путь обёртки, и ветка паузы не срабатывает —
+        ровно так, как README и предписывает вызывать программу.
+        """
+        wrapper = cls.base / "run_legacy.bat"
+        wrapper.write_text(
+            "@echo off\r\n"
+            'call "%s" /png:1 /jpg:1 /gif:1 "/outdir:%s" "%s"\r\n'
+            "exit /b %%errorlevel%%\r\n" % (LEGACY_BAT, out_dir, cls.images),
+            encoding="cp866", errors="replace")
+        return cls._capture(["cmd.exe", "/c", str(wrapper)], "cp866")
+
+    @classmethod
+    def _capture(cls, argv, encoding: str, env=None) -> str:
+        try:
+            proc = subprocess.run(
+                argv, cwd=str(REPO_ROOT), env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                timeout=cls.TIMEOUT)
+        except subprocess.TimeoutExpired as exc:
+            partial = (exc.output or b"").decode(encoding, "replace")
+            raise AssertionError(
+                "%s не завершилась за %d с. Последний вывод:\n%s"
+                % (argv[0], cls.TIMEOUT, partial[-3000:]))
+        return proc.stdout.decode(encoding, "replace")
 
     @classmethod
     def _run_new(cls, out_dir: Path) -> str:
         environment = dict(os.environ)
-        environment.update({"ICATALYST_NO_TITLE": "1", "PYTHONPATH": str(REPO_ROOT)})
-        proc = subprocess.run(
+        environment.update({"ICATALYST_NO_TITLE": "1", "PYTHONPATH": str(REPO_ROOT),
+                            "ICATALYST_PICKER": "terminal"})
+        return cls._capture(
             [sys.executable, "-m", "icatalyst", "/png:1", "/jpg:1", "/gif:1",
-             "/outdir:%s" % out_dir, "--tsv", "--no-pause", str(cls.images)],
-            cwd=str(REPO_ROOT), env=environment, stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
-        return proc.stdout.decode("utf-8", "replace")
+             "/outdir:%s" % out_dir, "--tsv", "--no-pause", "--threads", "1",
+             str(cls.images)],
+            "utf-8", env=environment)
 
     def _pairs(self):
         """(имя, старый результат, новый результат) для каждого файла корпуса."""

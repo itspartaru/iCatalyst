@@ -292,6 +292,8 @@ class DebPackageTest(unittest.TestCase):
                     mode = (P(base) / name).stat().st_mode & 0o777
                     self.assertEqual(mode, 0o755, "%s/%s" % (base, name))
 
+    @unittest.skipIf(os.name == "nt",
+                     "/etc — понятие Linux; .deb под Windows не устанавливается")
     def test_system_config_is_used_when_nothing_else_exists(self):
         """При установке из пакета каталога Tools рядом с модулем нет."""
         import tempfile as tf

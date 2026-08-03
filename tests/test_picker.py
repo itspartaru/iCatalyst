@@ -54,7 +54,7 @@ def _write_tool(directory: Path, name: str, body: str) -> Path:
 class BackendTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.bin = self.base / "bin"
         self.bin.mkdir()
 
@@ -178,7 +178,7 @@ class CliIntegrationTest(unittest.TestCase):
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        self.base = Path(self._tmp.name).resolve()
         self.tools = support.install_fake_tools(self.base / "fakebin")
         self.config = support.empty_config(self.base)
         self.bin = self.base / "bin"

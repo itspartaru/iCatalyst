@@ -13,7 +13,9 @@ from icatalyst.paths import CannotNameOutput, OutputMapper, long_path, normkey
 class MapperTest(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
-        self.base = Path(self._tmp.name)
+        # resolve(): на Windows tempfile отдаёт короткую форму 8.3, а приложение
+        # нормализует пути — без приведения к одной форме сравнения расходятся.
+        self.base = Path(self._tmp.name).resolve()
         self.src_dir = self.base / "Фото"
         (self.src_dir / "вложенная").mkdir(parents=True)
         self.file_a = self.src_dir / "лого.png"
