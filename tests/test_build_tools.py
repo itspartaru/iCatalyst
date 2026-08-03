@@ -226,6 +226,44 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("sudo apt install", out.getvalue())
 
+    def test_check_asks_about_modes_not_about_tool_names(self):
+        """На Windows нет optipng, но роль его играет TruePNG.
+
+        Раньше список обязательных инструментов был зашит как
+        optipng/gifsicle/jpegtran, и работа CI на windows-раннере падала при
+        полностью работоспособном наборе.
+        """
+        from pathlib import Path as P
+        tools = P(support.install_fake_tools(
+            P(support.tempdir()) / "bin",
+            only=["truepng", "deflopt", "advdef", "jpegtran", "gifsicle",
+                  "pngwolf", "oxipng"]))
+        config = support.posix_config(tools.parent)  # перезапишем ниже
+        config.write_text("[options]\nprofile=windows\n", encoding="utf-8")
+        with support.environment(ICATALYST_TOOLS_DIR=str(tools),
+                                 ICATALYST_TOOLS_ONLY="1",
+                                 ICATALYST_CONFIG=str(config)):
+            with support.captured() as (out, _):
+                code = bt.check()
+        text = out.getvalue()
+        self.assertEqual(code, 0, text)
+        self.assertIn("Все форматы работают", text)
+        # optipng отсутствует, и это не повод считать набор нерабочим.
+        self.assertNotIn("НЕДОСТУПЕН", text)
+
+    def test_check_fails_when_a_format_has_no_working_mode(self):
+        from pathlib import Path as P
+        empty = P(support.tempdir()) / "empty"
+        empty.mkdir()
+        with support.environment(ICATALYST_TOOLS_DIR=str(empty),
+                                 ICATALYST_TOOLS_ONLY="1",
+                                 ICATALYST_CONFIG=None):
+            with support.captured() as (out, _):
+                code = bt.check()
+        text = out.getvalue()
+        self.assertEqual(code, 1, text)
+        self.assertIn("НЕДОСТУПЕН", text)
+
     def test_clean_never_touches_bin_or_apps(self):
         """`--clean` удаляет только промежуточные результаты сборки."""
         apps = bt.TOOLS_DIR / "apps"

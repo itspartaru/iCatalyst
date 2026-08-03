@@ -43,10 +43,15 @@ class ToolMissing(Exception):
         self.build = build
         self.fallback = fallback
         lines = ["инструмент %s не найден" % name]
-        if apt:
+        # Совет про apt на Windows только сбивает с толку: там инструменты либо
+        # вложены в Tools/apps, либо скачиваются нашим же скриптом.
+        if apt and os.name != "nt":
             lines.append("  установить: sudo apt install %s" % apt)
         if build:
-            lines.append("  или собрать: python3 Tools/build_tools.py --build --only %s" % build)
+            lines.append("  или собрать: python%s Tools/build_tools.py --build --only %s"
+                         % ("" if os.name == "nt" else "3", build))
+        elif os.name == "nt":
+            lines.append("  скачать: python Tools/build_tools.py --download")
         if fallback:
             lines.append("  без него: %s" % fallback)
         super().__init__("\n".join(lines))

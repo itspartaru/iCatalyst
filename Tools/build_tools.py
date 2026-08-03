@@ -347,25 +347,69 @@ def _submodule_state(source: Path) -> Dict[str, str]:
 # Отчёт
 # ---------------------------------------------------------------------------
 
+#: Максимальный номер режима по формату.
+_MODES = {"png": 2, "jpg": 3, "gif": 1}
+
+
 def check() -> int:
-    """Напечатать матрицу возможностей. Это и есть результат работы скрипта."""
-    toolbox = Toolbox()
+    """Напечатать матрицу возможностей. Это и есть результат работы скрипта.
+
+    Проверяется доступность **режимов**, а не наличие конкретных утилит. Раньше
+    список обязательных был зашит как optipng/gifsicle/jpegtran, и на Windows
+    скрипт падал из-за отсутствия optipng — при том что там его роль играет
+    TruePNG, вложенный в репозиторий, и все режимы прекрасно работали.
+    """
+    from icatalyst import config as cfgmod
+    from icatalyst import recipes
+
+    # Читаем настоящую конфигурацию, а не значения по умолчанию: ключ `profile`
+    # меняет набор инструментов, и отчёт обязан показывать то, что программа
+    # действительно выполнит.
+    try:
+        cfg = cfgmod.load()
+    except cfgmod.ConfigError:
+        cfg = cfgmod.Config()
+    toolbox = Toolbox(cfg)
     log("Image Catalyst — доступные инструменты      платформа: %s" % platform_dir())
     log("")
     for line in toolbox.report():
         log(line)
     log("")
-    essential = ("optipng", "gifsicle", "jpegtran")
-    missing = [name for name in essential if toolbox.find(name) is None]
-    if missing:
-        packages = sorted({TOOL_SPECS[name].apt for name in missing
-                           if TOOL_SPECS[name].apt})
-        log("Без этих инструментов основные режимы недоступны: %s"
-            % ", ".join(missing))
-        if packages:
-            log("  sudo apt install %s" % " ".join(packages))
+
+    unavailable = []
+    for fmt, top in sorted(_MODES.items()):
+        modes = []
+        for mode in range(1, top + 1):
+            recipe = recipes.build(fmt, mode, cfg)
+            if recipe is None:
+                continue
+            chains = recipes.runnable_chains(recipe, toolbox)
+            if not chains:
+                spare = recipes.fallback_recipe(fmt, mode, cfg)
+                if spare is not None:
+                    chains = recipes.runnable_chains(spare, toolbox)
+            modes.append((recipe.label, bool(chains)))
+        ready = [label for label, ok in modes if ok]
+        missing = [label for label, ok in modes if not ok]
+        if ready:
+            log("  %-4s доступно: %s%s"
+                % (fmt.upper(), ", ".join(ready),
+                   ("; недоступно: " + ", ".join(missing)) if missing else ""))
+        else:
+            unavailable.append(fmt.upper())
+            log("  %-4s НЕДОСТУПЕН" % fmt.upper())
+
+    log("")
+    if unavailable:
+        log("Форматы без единого рабочего режима: %s" % ", ".join(unavailable))
+        needed = sorted({spec.apt for spec in TOOL_SPECS.values()
+                         if spec.apt and toolbox.find(spec.name) is None})
+        if needed and os.name != "nt":
+            log("  sudo apt install %s" % " ".join(needed))
+        elif os.name == "nt":
+            log("  python Tools/build_tools.py --download")
         return 1
-    log("Основные режимы доступны.")
+    log("Все форматы работают.")
     optional = [name for name in ("oxipng", "zopflipng", "pngwolf", "advdef")
                 if toolbox.find(name) is None]
     if optional:

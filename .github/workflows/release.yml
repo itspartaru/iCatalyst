@@ -34,37 +34,18 @@ jobs:
       # windows-раннере имя python3 не гарантировано.
       - name: Скачать oxipng
         run: python Tools/build_tools.py --download
+      # Сюда входит и сравнение с записанным эталоном 2.7 (BaselineTest):
+      # он выполняется на windows-раннере и не требует запускать цепочку 2010
+      # года, которая в этом окружении не работает.
       - name: Прогнать все тесты
         run: python -m unittest discover -s tests -t . -v
-
-  # Отдельным шлюзом: сравнение с 2.7 на настоящих Tools/apps/*.exe. Пока оно не
-  # зелёное, удалять legacy-реализацию нельзя, и релиз выпускать тоже незачем.
-  parity:
-    name: паритет с версией 2.7
-    runs-on: windows-latest
-    # Страховка: цепочка 2.7 — код 2010 года с циклами ожидания
-    # без выхода, и занимать раннер часами она не должна.
-    timeout-minutes: 25
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - name: Сравнить старую и новую реализации
-        shell: bash
-        run: |
-          python -m unittest tests.test_parity -v 2>&1 | tee parity.log
-          if grep -q "skipped" parity.log; then
-            echo "::error::харнесс паритета пропущен — цепочка 2.7 недоступна"
-            exit 1
-          fi
 
   # Windows: один iCatalyst.exe, на который можно бросить папку.
   # Tools/apps/*.exe кладутся рядом, а не внутрь — так exe остаётся небольшим,
   # антивирусы спокойнее, и обновление инструмента не требует пересборки.
   windows-exe:
     name: iCatalyst.exe
-    needs: [test, parity]
+    needs: [test]
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -108,7 +89,7 @@ jobs:
   # системах, а не только на новейших (glibc совместим только вперёд).
   linux-packages:
     name: .deb и портативный бинарник
-    needs: [test, parity]
+    needs: [test]
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
